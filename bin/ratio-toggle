@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#
+# Waybar module for Ratio - Omarchy's single_window_aspect_ratio, which squares a
+# lone tiled window instead of letting it span a wide screen. See ADR-0013.
+#
+#   ratio-toggle --status    print Waybar JSON for the current state
+#   ratio-toggle             flip it, then refresh the bar
+#
+# The icons are a matched pair from the same Material Design family, chosen so the
+# glyph itself says what a lone window will do:
+#
+#   off  U+F01A0  crop_landscape  a wide rectangle - the window spans the screen
+#   on   U+F01A2  crop_square     a square         - the window is constrained
+#
+# Same stroke weight and optical size, differing only in aspect, so the bar does not
+# appear to change weight when toggled. Both are narrower than the cpu glyph already
+# on the bar, so they fit the uniform-pitch grid in style.css without new margins.
+
+set -euo pipefail
+
+FLAG="$HOME/.local/state/omarchy/toggles/hypr/single-window-aspect-ratio.conf"
+# Signals 7-10 are taken by omarchy's own indicators.
+SIGNAL=11
+
+if [[ ${1-} == --status ]]; then
+  if [[ -f $FLAG ]]; then
+    printf '{"text":"\U000F01A2","tooltip":"Ratio on\\n\\nA lone window is squared.\\nClick to turn off.","class":"active"}\n'
+  else
+    printf '{"text":"\U000F01A0","tooltip":"Ratio off\\n\\nA lone window fills the screen.\\nClick to turn on."}\n'
+  fi
+  exit 0
+fi
+
+[[ -z ${1-} ]] || {
+  echo "usage: ratio-toggle [--status]" >&2
+  exit 1
+}
+
+# Omarchy's own toggle: copies the flag file in or out and reloads Hyprland. It does
+# not touch Waybar, which is why the signal below is ours to send.
+omarchy-hyprland-window-single-square-aspect-toggle
+pkill -RTMIN+$SIGNAL waybar 2>/dev/null || true

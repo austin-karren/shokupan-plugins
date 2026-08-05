@@ -1,13 +1,13 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Promote the Ratio toggle out of a menu and onto the bar
 
 The Ratio toggle — constraining a lone window to 1:1 via Hyprland's
 `single_window_aspect_ratio` — is used often enough that living three levels deep
-in a menu is the wrong home for it. Proposal: a module on the right side of the
-bar, alongside the other stateful indicators.
+in a menu is the wrong home for it. It is now `custom/ratio` on the right of the bar,
+backed by [`ratio-toggle`](../../.local/bin/ratio-toggle).
 
 ## Correction to the original framing
 
@@ -30,44 +30,85 @@ The module renders in both states rather than only when active — being able to
 (`custom/idle-indicator` and friends) do the opposite, emitting empty text when
 inactive, so this is a deliberate departure from that convention.
 
-## Settled: how state is read
+## How state is read — and a correction
+
+An earlier draft of this ADR said the flag lives at
+`~/.local/state/omarchy/toggles/single-window-aspect-ratio` and should be read with
+`omarchy-toggle-enabled single-window-aspect-ratio`. **Both are wrong**, and wrong in
+a way that fails silently.
 
 `omarchy-hyprland-window-single-square-aspect-toggle` delegates to
-`omarchy-hyprland-toggle` with the flag name `single-window-aspect-ratio`. Toggle
-state is therefore a flag file at
-`~/.local/state/omarchy/toggles/single-window-aspect-ratio`, and the supported way
-to read it is:
+`omarchy-hyprland-toggle`, not `omarchy-toggle`, and that variant writes into a
+`hypr/` subdirectory with a `.conf` suffix:
 
-```bash
-omarchy-toggle-enabled single-window-aspect-ratio
+```
+~/.local/state/omarchy/toggles/hypr/single-window-aspect-ratio.conf
 ```
 
-## Settled: distinguish by CSS class, not by a second glyph
+`omarchy-toggle-enabled` only ever tests `toggles/$1`, so it returns false while the
+toggle is on. Verified by observation: with Ratio enabled, that command still reported
+not-enabled. Following the original advice would have produced an icon permanently
+stuck in the "off" state, with nothing to indicate why. The module tests the real path
+directly.
 
-A second glyph is available but is the weaker option. Material Design ships
-filled/outline pairs of the same shape, which is what a "similar looking" partner
-would mean — but picking one blind is exactly how `custom/calendar` ended up
-needing the comment recording that `F0479` is an SD card, not a palette. Every
-codepoint in that range is present in JetBrainsMono Nerd Font, so the font cannot
-tell you which is which; only looking at it can.
+The two toggle families exist because Hyprland flags have to be *sourced* as config —
+`hyprland.conf` sources `toggles/hypr/*.conf` and the script runs `hyprctl reload` —
+whereas ordinary toggles are just marker files.
 
-Better: emit **one** glyph plus a `class` and let CSS carry the state, which is
-already the established pattern in this bar — `~/.config/waybar/style.css` styles
-`#custom-screenrecording-indicator.active` and
-`#custom-idle-indicator.active` today, and uses `opacity` elsewhere for exactly this
-kind of dimming. Identical shape, unmistakable difference, no glyph hunt.
+## Two glyphs, chosen by looking at them
 
-For the glyph itself, Omarchy already chose one for this feature: **U+F2D0**, used
-in both the enable and disable notifications of the toggle script. Reusing it keeps
-the bar and the notification consistent.
+An earlier draft argued for one glyph plus a CSS class, on the grounds that picking a
+"similar looking" partner glyph blind is how `custom/calendar` ended up needing a
+comment recording that `F0479` is an SD card rather than a palette. That reasoning was
+sound about the *risk* and wrong about the *remedy*: the fix for not knowing what a
+glyph looks like is to render it and look, which takes one command.
 
-## To settle at grill time
+Rendered candidates with `pango-view` and inspected them. The pair:
 
-- **Exact position within `modules-right`.** The right group is the agreed side, but
-  the order there is not arbitrary: `group/tray-expander` leads and `battery` ends
-  it. Sitting next to `cpu` groups it with the other always-on modules; sitting near
-  the indicators groups it with the other toggles.
-- `~/.config/hypr/looknfeel.conf` already carries a commented-out
-  `single_window_aspect_ratio = 1 1`. Whether that stays as documentation or goes
-  should be decided at the same time, since a value set there and the toggle's
-  config file are two sources for one setting.
+| State | Codepoint | Glyph |
+|---|---|---|
+| off | `U+F01A0` | `crop_landscape` — a wide rectangle |
+| on | `U+F01A2` | `crop_square` — a square |
+
+Same Material Design family, same stroke weight, same optical size, differing only in
+aspect — so the bar does not appear to change weight when toggled, and the icon states
+what a lone window will *do* rather than merely that something is on.
+
+The CSS `.active` class is deliberately **not** styled. In this bar `.active` means
+`#a55555` red and is reserved for warnings — recording, idle disabled, notifications
+silenced. Ratio being on is a normal state, not a warning.
+
+`U+F2D0`, which Omarchy uses in the toggle's own notifications, was not reused: it has
+no off-state partner, which is the whole requirement here.
+
+## Placement and spacing
+
+`custom/ratio` sits between `custom/apexshot` and `custom/weather`. The right group
+divides into actions then status — `apexshot` acts, everything from `weather` rightwards
+reports — and a toggle belongs with the actions.
+
+It takes **no bespoke margins**. `style.css` already solves this cluster with uniform
+*pitch* rather than tuned gaps (`min-width: 18px; margin: 0 5.7px`), precisely because
+status glyphs change width between states; adding `#custom-ratio` to that selector list
+is the whole change. Both new glyphs measured narrower than the `cpu` glyph already in
+that grid, so they fit the shared box.
+
+Verified by measuring ink-blob centres from a screenshot in both states. Every
+neighbouring icon is pixel-identical either way — centres `3452, 3506, 3605, 3652,
+3704, 3756, 3804` unchanged — so toggling shifts nothing on the bar. Residual pitch
+variation of a few physical pixels is glyph ink asymmetry inside fixed boxes, not
+layout drift.
+
+## Refresh
+
+`omarchy-hyprland-toggle` reloads Hyprland but knows nothing about Waybar, so clicking
+the module sends `SIGRTMIN+11` itself (signals 7–10 are taken by Omarchy's indicators).
+
+A 3-second `interval` backs that up, because Ratio can still be flipped from the Toggle
+Menu, which calls Omarchy's script directly and cannot signal the bar. Re-reading a flag
+file every few seconds is free and keeps the icon honest whichever route is used.
+
+## Resolved
+
+`~/.config/hypr/looknfeel.conf` carries `single_window_aspect_ratio = 1 1` **commented
+out**, so there is no competing source for the setting. Left as documentation.
