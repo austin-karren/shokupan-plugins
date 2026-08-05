@@ -55,31 +55,51 @@ The two toggle families exist because Hyprland flags have to be *sourced* as con
 `hyprland.conf` sources `toggles/hypr/*.conf` and the script runs `hyprctl reload` —
 whereas ordinary toggles are just marker files.
 
-## Two glyphs, chosen by looking at them
+## One glyph, dimmed — after trying two
 
-An earlier draft argued for one glyph plus a CSS class, on the grounds that picking a
-"similar looking" partner glyph blind is how `custom/calendar` ended up needing a
-comment recording that `F0479` is an SD card rather than a palette. That reasoning was
-sound about the *risk* and wrong about the *remedy*: the fix for not knowing what a
-glyph looks like is to render it and look, which takes one command.
+**Final:** `U+F2D0` (`window-maximize`) in both states, with the `active` class dimming
+it to `opacity: 0.45` when off. This is the glyph Omarchy already uses in this toggle's
+own notifications, so the bar and the toast agree.
 
-Rendered candidates with `pango-view` and inspected them. The pair:
+A matched pair was built and shipped first — `U+F01A0` `crop_landscape` for off,
+`U+F01A2` `crop_square` for on — so the glyph would show the shape a lone window takes.
+It was reverted after looking at it **on the bar** rather than in a test render:
 
-| State | Codepoint | Glyph |
-|---|---|---|
-| off | `U+F01A0` | `crop_landscape` — a wide rectangle |
-| on | `U+F01A2` | `crop_square` — a square |
+- Both are 1px outlines with almost no mass beside `F2D0`'s filled title bar. Next to
+  `apexshot`'s solid camera they read as unfinished.
+- At 12px the two barely differ from each other. The aspect distinction that is obvious
+  at 40px does not survive the shrink.
+- Their ink measured 13–15px against `apexshot`'s 18px, so they were also undersized
+  for the cell. With `F2D0` the gaps either side of the module measure 50 and 50
+  physical px against an ideal pitch of 49.1; with the outlines they were 47 and 52.
 
-Same Material Design family, same stroke weight, same optical size, differing only in
-aspect — so the bar does not appear to change weight when toggled, and the icon states
-what a lone window will *do* rather than merely that something is on.
+**No square sibling of `F2D0` exists.** Font Awesome's window family (`F2D0`–`F2D3`) is
+maximize / minimize / restore / close, none of them square. The nearest Material Design
+candidate, `F05AE`, is portrait with a small tab rather than a title bar, so pairing
+them reads as "window" versus "shutter". Verified by rendering both families and the
+dock family; there is no pair that keeps the weight.
 
-The CSS `.active` class is deliberately **not** styled. In this bar `.active` means
-`#a55555` red and is reserved for warnings — recording, idle disabled, notifications
-silenced. Ratio being on is a normal state, not a warning.
+So the earlier draft's recommendation — one glyph plus a class — was right, and for a
+reason it had not identified. Its stated argument was that picking a lookalike glyph
+blind is how `custom/calendar` ended up needing a comment about `F0479` being an SD
+card. That risk is real but answerable: `pango-view` renders a candidate row in one
+command. The *actual* reason to prefer one glyph is that a second glyph has to survive
+being shrunk to 12px next to solid neighbours, and outline pairs do not.
 
-`U+F2D0`, which Omarchy uses in the toggle's own notifications, was not reused: it has
-no off-state partner, which is the whole requirement here.
+**Dimming, not colour.** `.active` means `#a55555` red in this bar and is reserved for
+warnings — recording, idle disabled, notifications silenced. Ratio being on is a normal
+state. Opacity is already the idiom here for "present but not active"
+(`#workspaces button.empty`, `.hidden`).
+
+A single glyph also **fixes the module's footprint**, so toggling cannot shift its
+neighbours at all — a stronger guarantee than measuring that it happens not to.
+
+### The transferable lesson
+
+Render candidate glyphs, but judge them **composited into the bar at its real size**,
+against their actual neighbours. A glyph sheet at 40px on a black background answers
+"which icon is this?" and not "does this hold up at 12px beside a solid camera?" — and
+only the second question decides whether it looks finished.
 
 ## Placement and spacing
 
@@ -90,14 +110,14 @@ reports — and a toggle belongs with the actions.
 It takes **no bespoke margins**. `style.css` already solves this cluster with uniform
 *pitch* rather than tuned gaps (`min-width: 18px; margin: 0 5.7px`), precisely because
 status glyphs change width between states; adding `#custom-ratio` to that selector list
-is the whole change. Both new glyphs measured narrower than the `cpu` glyph already in
-that grid, so they fit the shared box.
+is the whole change. The glyph's ink measures 18px, the same as `apexshot`, so it sits
+inside the shared box.
 
-Verified by measuring ink-blob centres from a screenshot in both states. Every
-neighbouring icon is pixel-identical either way — centres `3452, 3506, 3605, 3652,
-3704, 3756, 3804` unchanged — so toggling shifts nothing on the bar. Residual pitch
-variation of a few physical pixels is glyph ink asymmetry inside fixed boxes, not
-layout drift.
+Verified by measuring ink-blob centres from a screenshot rather than by eye. Neighbour
+centres `3452, 3506, 3605, 3652, 3704, 3756, 3804` are unchanged by the toggle, and the
+gaps either side of the module are 50 and 50 physical px against an ideal pitch of 49.1.
+Residual variation of a few pixels elsewhere in the cluster is glyph ink asymmetry
+inside fixed boxes, not layout drift.
 
 ## Refresh
 

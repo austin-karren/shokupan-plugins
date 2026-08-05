@@ -6,15 +6,23 @@
 #   ratio-toggle --status    print Waybar JSON for the current state
 #   ratio-toggle             flip it, then refresh the bar
 #
-# The icons are a matched pair from the same Material Design family, chosen so the
-# glyph itself says what a lone window will do:
+# ONE glyph, U+F2D0 (window-maximize) - the same one Omarchy puts in this toggle's own
+# notifications, so the bar and the toast agree. State is carried by the `active` class
+# and dimmed in CSS, not by a second glyph.
 #
-#   off  U+F01A0  crop_landscape  a wide rectangle - the window spans the screen
-#   on   U+F01A2  crop_square     a square         - the window is constrained
+# A matched pair was tried first: U+F01A0 crop_landscape for off and U+F01A2 crop_square
+# for on, so the glyph would show the shape a lone window takes. Rendered at the bar's
+# real size it was clearly worse. Both are 1px outlines with almost no mass next to
+# F2D0's filled title bar, and at 12px the two barely differ from each other - the
+# aspect distinction that reads fine at 40px does not survive the shrink.
 #
-# Same stroke weight and optical size, differing only in aspect, so the bar does not
-# appear to change weight when toggled. Both are narrower than the cpu glyph already
-# on the bar, so they fit the uniform-pitch grid in style.css without new margins.
+# No square sibling of F2D0 exists to fix that. Font Awesome's window family
+# (F2D0..F2D3) is maximize/minimize/restore/close, none of them square; the nearest
+# Material Design candidate, F05AE, is portrait with a small tab rather than a title
+# bar, so pairing them reads as "window" versus "shutter".
+#
+# Using one glyph also means the module's footprint cannot change between states, so
+# nothing on the bar can shift when it is toggled.
 
 set -euo pipefail
 
@@ -24,9 +32,9 @@ SIGNAL=11
 
 if [[ ${1-} == --status ]]; then
   if [[ -f $FLAG ]]; then
-    printf '{"text":"\U000F01A2","tooltip":"Ratio on\\n\\nA lone window is squared.\\nClick to turn off.","class":"active"}\n'
+    printf '{"text":"","tooltip":"Ratio on\\n\\nA lone window is squared.\\nClick to turn off.","class":"active"}\n'
   else
-    printf '{"text":"\U000F01A0","tooltip":"Ratio off\\n\\nA lone window fills the screen.\\nClick to turn on."}\n'
+    printf '{"text":"","tooltip":"Ratio off\\n\\nA lone window fills the screen.\\nClick to turn on."}\n'
   fi
   exit 0
 fi
