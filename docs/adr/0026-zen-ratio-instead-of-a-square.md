@@ -58,19 +58,35 @@ panel is 3:2.
 
 The feature is reachable three ways, and all three must keep working:
 
-| Entry point | Runs |
-|---|---|
-| The bar module | `ratio-toggle` |
-| Toggle Menu → "1-Window Ratio" | Omarchy's square toggle |
-| `SUPER+CTRL+BACKSPACE` | Omarchy's square toggle — rebound to `ratio-toggle` |
+| Entry point | Runs | How |
+|---|---|---|
+| The bar module | `ratio-toggle` | `custom/ratio` in `config.jsonc` |
+| Toggle Menu → "1-Window **Zen** Ratio" | `ratio-toggle` | `show_toggle_menu` override |
+| `SUPER+CTRL+BACKSPACE` | `ratio-toggle` | rebound in `bindings.conf` |
 
 `omarchy-hyprland-window-single-square-aspect-toggle` copies a **fixed** file out of
 Omarchy's read-only tree, hardcoding `single_window_aspect_ratio = 1 1`. Editing the copy
 is not durable: the next enable re-copies the original.
 
 **Replacing that script is not possible.** `~/.local/share/omarchy/bin` comes *before*
-`~/.local/bin` on `PATH`, so a same-named script here never wins. The Toggle Menu's
-dispatch is hardcoded in `omarchy-menu`, which is read-only.
+`~/.local/bin` on `PATH`, so a same-named script here never wins.
+
+**The menu, however, has a sanctioned override.** `omarchy-menu` sources
+`~/.config/omarchy/extensions/menu.sh` *after* defining its functions, so redefining
+`show_toggle_menu` there replaces it with nothing in Omarchy's tree touched. An earlier
+revision of this ADR claimed the menu could not be fixed and dismissed it as "far more
+machinery than a stale label deserves" — that was simply wrong: the extension point was
+there, and the file already existed holding Omarchy's template.
+
+The override is **generated from Omarchy's source rather than retyped**, with exactly two
+edits — the label gains "Zen", and the dispatch calls `ratio-toggle`. Verified
+byte-identical to upstream otherwise. Retyping it would have meant hand-copying eleven
+Nerd Font glyphs, and this work has already lost one glyph to a manual edit.
+
+Its cost is the one Omarchy's own template warns about: **an overridden function does not
+receive upstream updates.** If Omarchy adds or renames a Toggle Menu entry, this copy
+silently lacks it. Recorded in the file itself with the instruction to re-copy after an
+update that touches that menu.
 
 ### A private filename was tried and is subtly broken
 
@@ -90,14 +106,13 @@ does nothing."
 script still finds the file and can still remove it, so off works from every entry point.
 
 `--status` additionally repairs the value: if the file exists but does not carry the
-configured ratio, it is rewritten and Hyprland reloaded. Waybar polls that every 3
-seconds, so a 1:1 copy written by the Toggle Menu becomes the zen ratio within one poll.
-That poll — added for a different reason, to notice out-of-band changes — turns out to be
-the entire mechanism that makes the menu apply the right value.
+configured ratio, it is rewritten and Hyprland reloaded. Waybar polls that every 3 seconds.
 
-`SUPER+CTRL+BACKSPACE` is rebound to `ratio-toggle` rather than left to be repaired,
-purely for immediacy: otherwise it would apply 1:1 and visibly snap to 6:5 a moment
-later.
+That repair started out as the *mechanism* for making the Toggle Menu apply the right
+value. With the menu override in place it is now a **safety net** — every entry point
+calls `ratio-toggle` directly, so Omarchy's square script is no longer reachable from any
+of them. It is kept because the script can still be run by hand, and because a 1:1 file
+left over from before this change would otherwise persist silently.
 
 ## The icon vanished, and nothing reported it
 
@@ -145,7 +160,9 @@ The ceiling is worth re-measuring if the monitor ever changes, and `ASPECT` in
 `ratio-toggle` is a single constant for that reason. Raising it past 6:5 on this display
 will make the toggle appear to do nothing.
 
-The Toggle Menu's label still reads "1-Window Ratio" and its notification still says
-"square", both hardcoded in Omarchy's read-only tree. Only the value is corrected, not the
-wording. Left alone rather than worked around — the alternative is a shadowed menu, which
-is far more machinery than a stale label deserves.
+`omarchy-hyprland-window-single-square-aspect-toggle` is now unreferenced by anything here.
+It still exists and still works, applying 1:1; running it by hand is the one way to get a
+square back, and the `--status` repair will undo that on the next poll.
+
+Re-copy `show_toggle_menu` from `$OMARCHY_PATH/bin/omarchy-menu` after any Omarchy update
+that adds or renames a Toggle Menu entry.
