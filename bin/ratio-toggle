@@ -1,40 +1,79 @@
 #!/usr/bin/env bash
 #
-# Waybar module for Ratio - Omarchy's single_window_aspect_ratio, which squares a
-# lone tiled window instead of letting it span a wide screen. See ADR-0013.
+# Waybar module for the Zen ratio - constraining a lone tiled window to a readable
+# column instead of letting it span the whole display. See ADR-0013 and ADR-0026.
 #
 #   ratio-toggle --status    print Waybar JSON for the current state
-#   ratio-toggle             flip it, then refresh the bar
+#   ratio-toggle             flip it, reload Hyprland, refresh the bar
 #
-# ONE glyph, U+F2D0 (window-maximize) - the same one Omarchy puts in this toggle's own
-# notifications, so the bar and the toast agree. State is carried by the `active` class
-# and dimmed in CSS, not by a second glyph.
+# WHY THIS NO LONGER USES OMARCHY'S TOGGLE
 #
-# A matched pair was tried first: U+F01A0 crop_landscape for off and U+F01A2 crop_square
-# for on, so the glyph would show the shape a lone window takes. Rendered at the bar's
-# real size it was clearly worse. Both are 1px outlines with almost no mass next to
-# F2D0's filled title bar, and at 12px the two barely differ from each other - the
-# aspect distinction that reads fine at 40px does not survive the shrink.
+# `omarchy-hyprland-window-single-square-aspect-toggle` copies a FIXED file from
+# Omarchy's read-only tree, and that file hardcodes `single_window_aspect_ratio = 1 1`.
+# Editing the copy is not durable: the next enable re-copies the original. So to run any
+# ratio other than square, this script has to own the config file itself.
 #
-# No square sibling of F2D0 exists to fix that. Font Awesome's window family
-# (F2D0..F2D3) is maximize/minimize/restore/close, none of them square; the nearest
-# Material Design candidate, F05AE, is portrait with a small tab rather than a title
-# bar, so pairing them reads as "window" versus "shutter".
+# The file still lives in the toggles directory, because `hyprland.conf` sources
+# `~/.local/state/omarchy/toggles/hypr/*.conf` - that glob is the whole mechanism, and a
+# differently-named file in it works exactly as well as Omarchy's own.
 #
-# Using one glyph also means the module's footprint cannot change between states, so
-# nothing on the bar can shift when it is toggled.
+# WHY 6:5, AND THE CEILING THAT FORCES IT
+#
+# Hyprland SILENTLY IGNORES this setting unless the constraint would shrink the window to
+# 80% or less of the available width. Measured on this machine, available area 2284x1484:
+#
+#   1.20 (6:5)  -> 1782px  78.0%  applied
+#   1.23        -> 1826px  79.9%  applied
+#   1.24        -> ignored 80.5%
+#   1.25 (5:4)  -> ignored
+#   1.33 (4:3)  -> ignored
+#
+# The boundary is 0.8 x the available area's own aspect (0.8 x 1.5391 = 1.2313). So there
+# is a hard ceiling of ~1.23 here, and 4:3 and even 5:4 are unreachable - they fail
+# silently, leaving a full-width window and no clue why. 6:5 is the widest clean ratio
+# under the ceiling.
+#
+# The ceiling scales with the display, so this is not portable: on a 16:9 monitor the
+# limit would be ~1.42 and 4:3 would work fine. This display is 3840x2560 - exactly 3:2 -
+# which is what makes the usable range so narrow.
+#
+#   1:1   1484px wide   400px margin each side    65% of full width
+#   11:10 1632px         326px                     71%
+#   6:5   1782px         251px                     78%   <- chosen
+#   5:4   ignored - would be 81%
+#
+# ONE GLYPH, DIMMED
+#
+# U+F2D0 (window-maximize) in both states, the same glyph Omarchy puts in this toggle's
+# notifications, with `active` dimming it in CSS. A matched pair of crop_landscape and
+# crop_square was tried and reverted: at 12px both are 1px outlines with no mass beside
+# apexshot's solid camera, and they barely differ from each other. ADR-0013 has the
+# detail. One glyph also fixes the module's footprint, so toggling cannot shift the icons
+# beside it.
 
 set -euo pipefail
 
-FLAG="$HOME/.local/state/omarchy/toggles/hypr/single-window-aspect-ratio.conf"
+# Width:height. Must be below 0.8 x the usable area's aspect or Hyprland ignores it
+# outright - see above. On this display that ceiling is ~1.23, so do not raise this past
+# 6:5 without re-measuring, or the toggle will appear to do nothing.
+ASPECT="6 5"
+
+TOGGLE_DIR="$HOME/.local/state/omarchy/toggles/hypr"
+ZEN_FLAG="$TOGGLE_DIR/single-window-zen-aspect-ratio.conf"
+# Omarchy's own 1:1 flag, still reachable from the Toggle Menu.
+SQUARE_FLAG="$TOGGLE_DIR/single-window-aspect-ratio.conf"
 # Signals 7-10 are taken by omarchy's own indicators.
 SIGNAL=11
 
+# Active if EITHER file is present: the Toggle Menu entry still writes Omarchy's square
+# one, and the bar must not claim the constraint is off while a window is being squared.
+active() { [[ -f $ZEN_FLAG || -f $SQUARE_FLAG ]]; }
+
 if [[ ${1-} == --status ]]; then
-  if [[ -f $FLAG ]]; then
-    printf '{"text":"","tooltip":"Ratio on\\n\\nA lone window is squared.\\nClick to turn off.","class":"active"}\n'
+  if active; then
+    printf '{"text":"","tooltip":"Zen ratio on\\n\\nA lone window is held to %s.\\nClick to turn off.","class":"active"}\n' "${ASPECT// /:}"
   else
-    printf '{"text":"","tooltip":"Ratio off\\n\\nA lone window fills the screen.\\nClick to turn on."}\n'
+    printf '{"text":"","tooltip":"Zen ratio off\\n\\nA lone window fills the screen.\\nClick to turn on."}\n'
   fi
   exit 0
 fi
@@ -44,7 +83,29 @@ fi
   exit 1
 }
 
-# Omarchy's own toggle: copies the flag file in or out and reloads Hyprland. It does
-# not touch Waybar, which is why the signal below is ours to send.
-omarchy-hyprland-window-single-square-aspect-toggle
+if active; then
+  # Remove both, so a square left behind by the Toggle Menu cannot survive an "off".
+  rm -f "$ZEN_FLAG" "$SQUARE_FLAG"
+  notify="Zen ratio off"
+  detail="A lone window fills the screen"
+else
+  mkdir -p "$TOGGLE_DIR"
+  cat >"$ZEN_FLAG" <<EOF
+# Written by ratio-toggle - do not edit; the script rewrites this file.
+# Zen ratio: hold a lone tiled window to ${ASPECT// /:} rather than letting it span a
+# 3:2 display. See ADR-0026.
+layout {
+    single_window_aspect_ratio = $ASPECT
+}
+EOF
+  # If the Toggle Menu had squared it, drop that so the two cannot both apply. The glob
+  # is alphabetical, so zen would win anyway - but relying on filename order is not a
+  # thing to leave in place.
+  rm -f "$SQUARE_FLAG"
+  notify="Zen ratio on"
+  detail="A lone window is held to ${ASPECT// /:}"
+fi
+
+hyprctl reload >/dev/null
+command -v notify-send >/dev/null && notify-send -u low "$notify" "$detail"
 pkill -RTMIN+$SIGNAL waybar 2>/dev/null || true
