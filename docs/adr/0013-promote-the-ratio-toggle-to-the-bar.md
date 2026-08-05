@@ -2,16 +2,16 @@
 status: accepted
 ---
 
-# Promote the Zen ratio toggle out of a menu and onto the bar
+# Promote the single-window aspect-ratio toggle out of a menu and onto the bar
 
-The Zen ratio toggle — constraining a lone window via Hyprland's
+The single-window aspect-ratio toggle — constraining a lone window via Hyprland's
 `single_window_aspect_ratio` — is used often enough that living three levels deep
 in a menu is the wrong home for it. It is now `custom/ratio` on the right of the bar,
 backed by [`ratio-toggle`](../../.local/bin/ratio-toggle).
 
 ## Correction to the original framing
 
-The Zen ratio is **not** in the System Palette. It is an entry in Omarchy's Toggle Menu
+It is **not** in the System Palette. It is an entry in Omarchy's Toggle Menu
 (`SUPER+CTRL+O`), which dispatches to
 `omarchy-hyprland-window-single-square-aspect-toggle`. Worth stating because
 "move it out of the quick menu" describes a move that cannot happen as written.
@@ -57,13 +57,13 @@ whereas ordinary toggles are just marker files.
 
 **Superseded in part by ADR-0026.** The module no longer delegates to Omarchy's script at
 all: that script copies a file hardcoding `1 1`, so running any other ratio means owning
-the file. `ratio-toggle` now writes its own `single-window-zen-aspect-ratio.conf` into the
-same directory, treats *either* file as "on", and removes both when switched off. The
-feature is also renamed — see the **Zen ratio** in the glossary.
+the file. `ratio-toggle` writes Omarchy's *own* filename with different contents instead, so
+Omarchy's script can still remove it and the Toggle Menu keeps working. The
+feature is also renamed — see **single-window zen aspect ratio** in the glossary.
 
-So the property claimed further down — reachable from both the Toggle Menu and the bar —
-no longer quite holds. The menu entry still works, but sets 1:1 rather than the configured
-ratio. The bar is the correct control.
+The property claimed further down — reachable from both the Toggle Menu and the bar — does
+still hold, and there is a third route, `SUPER+CTRL+BACKSPACE`. The menu writes 1:1; the
+module's own status poll rewrites it to the configured ratio within 3 seconds.
 
 ## One glyph, dimmed — after trying two
 
@@ -97,7 +97,7 @@ command. The *actual* reason to prefer one glyph is that a second glyph has to s
 being shrunk to 12px next to solid neighbours, and outline pairs do not.
 
 **Dimming, not colour.** `.active` means `#a55555` red in this bar and is reserved for
-warnings — recording, idle disabled, notifications silenced. The Zen ratio being on is a normal
+warnings — recording, idle disabled, notifications silenced. The constraint being on is a normal
 state. Opacity is already the idiom here for "present but not active"
 (`#workspaces button.empty`, `.hidden`).
 
@@ -135,7 +135,7 @@ Hyprland has to be reloaded for a sourced toggle file to take effect, and nothin
 path knows about Waybar, so clicking the module sends `SIGRTMIN+11` itself (signals 7–10
 are taken by Omarchy's indicators).
 
-A 3-second `interval` backs that up, because the Zen ratio can still be flipped from the
+A 3-second `interval` backs that up, because the ratio can still be flipped from the
 Toggle Menu, which calls Omarchy's script directly and cannot signal the bar. Re-reading a
 flag file every few seconds is free and keeps the icon honest whichever route is used.
 

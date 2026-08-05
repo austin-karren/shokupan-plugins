@@ -2,14 +2,20 @@
 status: accepted
 ---
 
-# The Zen ratio: a reading column, not a square
+# The single-window zen aspect ratio: a reading column, not a square
 
-Renamed from **Ratio** to **Zen ratio**, and widened from `1 1` to `6 5`. The point of
-the feature is holding a lone window to a comfortable reading width on a wide display; a
-square was one setting of that, not the goal, and the old name described the setting.
+Omarchy's **single-window square aspect ratio**, kept as a feature and renamed to
+**single-window zen aspect ratio**, with the value widened from `1 1` to `6 5`. The point
+of the feature is holding a lone window to a comfortable reading width on a wide display;
+a square was one setting of that, not the goal, and the old name described the setting.
 
-Implemented in [`ratio-toggle`](../../.local/bin/ratio-toggle), which now owns the config
-file — see below.
+**Omarchy's branding is kept deliberately.** Only the word "square" changes. An earlier
+revision rebranded it to a short "Zen ratio" with its own vocabulary and tooltips, which
+was wrong twice over: it discarded a name that already described what the feature does,
+and it made the bar disagree with the Toggle Menu entry and notifications for the same
+feature.
+
+Implemented in [`ratio-toggle`](../../.local/bin/ratio-toggle).
 
 ## Hyprland silently ignores gentle ratios
 
@@ -48,31 +54,63 @@ The ceiling scales with the display, so **this is not portable**: on a 16:9 moni
 limit would be ~1.42 and 4:3 would work fine. It is narrow here precisely because the
 panel is 3:2.
 
-## The toggle owns its own config file now
+## Three entry points, one flag file
+
+The feature is reachable three ways, and all three must keep working:
+
+| Entry point | Runs |
+|---|---|
+| The bar module | `ratio-toggle` |
+| Toggle Menu → "1-Window Ratio" | Omarchy's square toggle |
+| `SUPER+CTRL+BACKSPACE` | Omarchy's square toggle — rebound to `ratio-toggle` |
 
 `omarchy-hyprland-window-single-square-aspect-toggle` copies a **fixed** file out of
-Omarchy's read-only tree, and that file hardcodes `single_window_aspect_ratio = 1 1`.
-Editing the copy is not durable — the next enable re-copies the original. Running any
-ratio other than square therefore requires owning the file.
+Omarchy's read-only tree, hardcoding `single_window_aspect_ratio = 1 1`. Editing the copy
+is not durable: the next enable re-copies the original.
 
-`ratio-toggle` writes `single-window-zen-aspect-ratio.conf` into
-`~/.local/state/omarchy/toggles/hypr/` instead. Nothing clever is needed: `hyprland.conf`
-sources `toggles/hypr/*.conf`, and that glob is the entire mechanism, so a
-differently-named file in it works exactly as well as Omarchy's.
+**Replacing that script is not possible.** `~/.local/share/omarchy/bin` comes *before*
+`~/.local/bin` on `PATH`, so a same-named script here never wins. The Toggle Menu's
+dispatch is hardcoded in `omarchy-menu`, which is read-only.
 
-**Consequence: the Toggle Menu and the bar now disagree.** Omarchy's menu entry still
-writes its own square flag, which this repo cannot change. Handled rather than ignored:
+### A private filename was tried and is subtly broken
 
-- "Active" means **either** file exists, so the bar never claims the constraint is off
-  while a window is being squared by the menu.
-- Turning it off removes **both**, so a square left behind by the menu cannot survive.
-- Turning it on removes Omarchy's, so the two cannot both apply. The glob is
-  alphabetical and `zen` would win anyway, but relying on filename ordering is not
-  something to leave in place.
+The first attempt wrote its own `single-window-zen-aspect-ratio.conf`, reasoning that
+`hyprland.conf` sources `toggles/hypr/*.conf` so any filename in that glob works.
 
-This is a deliberate divergence from ADR-0013, which listed "reachable from both the
-Toggle Menu and the bar" as a property. The bar is now the correct control; the menu
-entry is a legacy path that sets a different value.
+It does work in isolation, and it **breaks the Toggle Menu**: Omarchy's script tests for
+*its* exact path, so with only the private file present it finds nothing to remove and
+concludes the feature is off. The menu entry could then only ever turn it **on** — and
+because the private file also won the alphabetical glob, enabling from the menu produced
+no visible change at all. Reported symptom: "still shows in the omarchy options menu but
+does nothing."
+
+### What it does instead
+
+`ratio-toggle` writes **Omarchy's own filename** with different *contents*. Omarchy's
+script still finds the file and can still remove it, so off works from every entry point.
+
+`--status` additionally repairs the value: if the file exists but does not carry the
+configured ratio, it is rewritten and Hyprland reloaded. Waybar polls that every 3
+seconds, so a 1:1 copy written by the Toggle Menu becomes the zen ratio within one poll.
+That poll — added for a different reason, to notice out-of-band changes — turns out to be
+the entire mechanism that makes the menu apply the right value.
+
+`SUPER+CTRL+BACKSPACE` is rebound to `ratio-toggle` rather than left to be repaired,
+purely for immediacy: otherwise it would apply 1:1 and visibly snap to 6:5 a moment
+later.
+
+## The icon vanished, and nothing reported it
+
+Worth recording because the failure was invisible. An intermediate revision embedded the
+`U+F2D0` glyph as a literal character in the script; an edit dropped it, `"text"` became
+an empty string, and **Waybar rendered nothing at all** — no error, no log line, the
+module simply absent from the bar. A module with empty text is indistinguishable from one
+that is deliberately blank, which is exactly how Omarchy's own indicators hide themselves.
+
+The glyph is now `$'\uF2D0'` via bash ANSI-C quoting. An escape survives editing; a
+private-use codepoint that renders as nothing does not. **Any glyph in a script should be
+an escape, not a pasted character** — this is the second time in this work that an
+invisible character caused a silent failure.
 
 ## Verified
 
@@ -85,6 +123,17 @@ Toggled against a real lone tiled window:
 `hyprctl getoption layout:single_window_aspect_ratio` reports `[6,5]`, and `hyprctl
 configerrors` is clean.
 
+All three entry points exercised:
+
+    bar toggle on                    -> flag written, effective [6,5]
+    omarchy's 1:1 copy dropped in    -> effective [1,1]
+    one --status poll                -> file rewritten, effective [6,5]
+    omarchy's own toggle             -> flag removed, module reports off
+    bar toggle on again              -> effective [6,5]
+
+And the bar itself, from a screenshot: the module is present, bright when on and dimmed
+when off, with the gaps either side still measuring 50 and 50 physical px.
+
 Note that `hyprctl reload` alone does **not** re-lay-out existing windows — the earlier
 measurements needed a float/tile round-trip to force it. Real use hides this because
 opening or closing a window re-tiles anyway, but it makes a value change look inert if
@@ -95,3 +144,8 @@ you only reload and stare at the screen.
 The ceiling is worth re-measuring if the monitor ever changes, and `ASPECT` in
 `ratio-toggle` is a single constant for that reason. Raising it past 6:5 on this display
 will make the toggle appear to do nothing.
+
+The Toggle Menu's label still reads "1-Window Ratio" and its notification still says
+"square", both hardcoded in Omarchy's read-only tree. Only the value is corrected, not the
+wording. Left alone rather than worked around — the alternative is a shadowed menu, which
+is far more machinery than a stale label deserves.
