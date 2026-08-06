@@ -62,11 +62,56 @@ globe says that without asking you to know what a physical layer is.
 
 ## Spacing
 
-The right cluster needed no work: it is built on uniform *pitch* rather than tuned
-gaps (ADR-0013), so removing two modules from the selector list leaves the survivors
-on the same grid. Measured icon-centre spacing before and after removal, in physical
-px at 1.67x: before `52.5, 50, 50, 50, 52.5, 50.5, 48.5`, after `52.5, 50, 47, 52,
-51`. Unchanged, as the design predicted.
+The right cluster's *boxes* needed no work: it is built on uniform pitch rather than
+tuned gaps (ADR-0013), so removing two modules from the selector list leaves the
+survivors on the same grid. Confirmed by painting each module a flat colour and
+measuring the painted spans directly, rather than inferring boxes from glyph ink:
+every box is 29 physical px wide, pitch is exactly 50.0, inter-box gaps exactly 21.
+
+But uniform boxes are not the same as even spacing, and the shortened cluster made
+that visible. See below.
+
+### The bluetooth glyph, and what "uniform box" was actually for
+
+With weather and cpu gone, the gap to the left of the network globe read as a hole.
+It was not layout — the boxes are provably identical and every glyph is centred
+within its own advance (measured across the font: all offsets ±0.5px). It was glyph
+*shape*: the bluetooth rune is 11 physical px of ink where its neighbours are 16..18,
+at the same 16px ink height. Narrow, not small. Centred in an 18px box it carries ~9px
+of air per side against its neighbours' ~5, and the surplus pools next to the globe.
+
+Two things changed. First the glyph: `format` was `U+F294`, Font Awesome's
+`bluetooth_b`, while the *same module's* other three states were already Material
+Design. It is now `U+F00AF`, so all four states are one family — which is what
+ADR-0006's calendar note said the bar prefers, and which widens the ink from 9 to 11px
+on the way.
+
+Then the box: `#bluetooth` gets `min-width: 15px` instead of the shared 18px. This
+looks like the per-module tuning the `style.css` comment forbids, and it is worth
+being precise about why it is not. That rule exists because status glyphs change
+width *between states*, so any gap tuned for one state is wrong in another. The
+constant it protects is "the box must exceed the widest state the module can show" —
+not the number 18. Bluetooth's four states measure 11, 13 and 15 physical px, so a
+15px logical box (25 physical) still clears the widest of them and the module cannot
+clip or reflow when a device connects. 18px was never a law; it was one family's
+measurement, silently applied to a narrower family.
+
+Measured ink gaps across the status run, physical px at 1.67x:
+
+| | gaps | spread |
+|---|---|---|
+| before | 31, 32, **38**, 33 | 7 |
+| after | 31, 31, **35**, 33 | 4 |
+
+The residual 35 is `custom/ratio`'s ink sitting ~2px right of its own box centre, a
+subpixel rounding artifact that moves when ratio toggles glyph. Correcting for it
+would mean tuning one module against a *neighbour's* state, which is the thing the
+rule genuinely forbids. Left alone.
+
+The wider gap before the tray chevron is a different thing and is left alone too:
+`#custom-expand-icon` sits inside `group/tray-expander`, whose layout governs it —
+setting `min-width` there changes nothing, verified by sweeping it — and the gap
+reads as the boundary between the drawer and the status run.
 
 The centre trio needed new rules. Every centre module now carries a **left margin
 only**, so each gap is written in exactly one place and two adjacent margins can
