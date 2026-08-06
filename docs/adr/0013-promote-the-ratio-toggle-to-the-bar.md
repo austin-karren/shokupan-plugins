@@ -117,6 +117,11 @@ only the second question decides whether it looks finished.
 divides into actions then status — `apexshot` acts, everything from `weather` rightwards
 reports — and a toggle belongs with the actions.
 
+> ADR-0029 later moved `custom/weather` to the centre and deleted `cpu`. The division
+> above is unchanged and was the reasoning for both; the status run now begins at
+> `bluetooth`, and `custom/ratio`'s position between `apexshot` and it is the same
+> position it always held.
+
 It takes **no bespoke margins**. `style.css` already solves this cluster with uniform
 *pitch* rather than tuned gaps (`min-width: 18px; margin: 0 5.7px`), precisely because
 status glyphs change width between states; adding `#custom-ratio` to that selector list
