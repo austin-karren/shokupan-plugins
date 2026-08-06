@@ -1,0 +1,54 @@
+#!/bin/bash
+# Show/hide GNOME Calendar as a centered popup, driven by the waybar calendar icon.
+#
+# Uses a dedicated Hyprland SPECIAL workspace rather than closing and relaunching
+# the app. Two reasons:
+#
+#   1. Speed. gnome-calendar talks to evolution-data-server on startup, so a cold
+#      launch is seconds, not milliseconds. Hiding keeps it warm, so every toggle
+#      after the first is instant.
+#   2. State. Hiding preserves the month you had scrolled to and any open event.
+#      Closing resets to today every time.
+#
+# The special workspace is named "calendar", deliberately NOT the "scratchpad" one
+# that SUPER+S toggles -- sharing it would mean SUPER+S also summoned the calendar
+# and that stashing a window with SUPER+ALT+S dumped it next to the calendar.
+#
+# Omarchy's looknfeel.conf sets hide_special_on_workspace_change = true, so
+# switching workspaces dismisses the popup on its own. That is the behaviour we
+# want and the reason no extra focus-tracking logic is needed here.
+#
+# Companion pieces: window rules in ~/.config/hypr/windows.conf, waybar module
+# "custom/calendar" in ~/.config/waybar/config.jsonc.
+
+set -u
+
+CLASS="org.gnome.Calendar"
+WS="calendar"
+
+window_address() {
+  hyprctl clients -j | jq -r --arg c "$CLASS" '.[] | select(.class == $c) | .address' | head -n1
+}
+
+window_workspace() {
+  hyprctl clients -j | jq -r --arg c "$CLASS" '.[] | select(.class == $c) | .workspace.name' | head -n1
+}
+
+ADDR="$(window_address)"
+
+if [[ -z $ADDR ]]; then
+  # Not running. The windowrule sends it to special:calendar WITHOUT `silent`,
+  # so Hyprland reveals that workspace as the window maps. Nothing to toggle.
+  exec uwsm-app -- gnome-calendar
+fi
+
+# Running, but parked on a normal workspace -- most likely dragged out by hand, or
+# launched from the app launcher before the rules were in place. Recapture it
+# instead of toggling an empty special workspace, which would look like a no-op.
+if [[ "$(window_workspace)" != "special:$WS" ]]; then
+  hyprctl dispatch movetoworkspacesilent "special:$WS,address:$ADDR" >/dev/null
+  hyprctl dispatch togglespecialworkspace "$WS" >/dev/null
+  exit 0
+fi
+
+hyprctl dispatch togglespecialworkspace "$WS" >/dev/null
