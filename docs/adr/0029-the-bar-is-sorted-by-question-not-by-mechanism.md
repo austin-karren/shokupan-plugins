@@ -62,62 +62,13 @@ globe says that without asking you to know what a physical layer is.
 
 ## Spacing
 
-The right cluster's *boxes* needed no work: it is built on uniform pitch rather than
-tuned gaps (ADR-0013), so removing two modules from the selector list leaves the
-survivors on the same grid. Confirmed by painting each module a flat colour and
-measuring the painted spans directly, rather than inferring boxes from glyph ink:
-every box is 29 physical px wide, pitch is exactly 50.0, inter-box gaps exactly 21.
+### The centre trio
 
-But uniform boxes are not the same as even spacing, and the shortened cluster made
-that visible. See below.
-
-### The bluetooth glyph, and what "uniform box" was actually for
-
-With weather and cpu gone, the gap to the left of the network globe read as a hole.
-It was not layout — the boxes are provably identical and every glyph is centred
-within its own advance (measured across the font: all offsets ±0.5px). It was glyph
-*shape*: the bluetooth rune is 11 physical px of ink where its neighbours are 16..18,
-at the same 16px ink height. Narrow, not small. Centred in an 18px box it carries ~9px
-of air per side against its neighbours' ~5, and the surplus pools next to the globe.
-
-Two things changed. First the glyph: `format` was `U+F294`, Font Awesome's
-`bluetooth_b`, while the *same module's* other three states were already Material
-Design. It is now `U+F00AF`, so all four states are one family — which is what
-ADR-0006's calendar note said the bar prefers, and which widens the ink from 9 to 11px
-on the way.
-
-Then the box: `#bluetooth` gets `min-width: 15px` instead of the shared 18px. This
-looks like the per-module tuning the `style.css` comment forbids, and it is worth
-being precise about why it is not. That rule exists because status glyphs change
-width *between states*, so any gap tuned for one state is wrong in another. The
-constant it protects is "the box must exceed the widest state the module can show" —
-not the number 18. Bluetooth's four states measure 11, 13 and 15 physical px, so a
-15px logical box (25 physical) still clears the widest of them and the module cannot
-clip or reflow when a device connects. 18px was never a law; it was one family's
-measurement, silently applied to a narrower family.
-
-Measured ink gaps across the status run, physical px at 1.67x:
-
-| | gaps | spread |
-|---|---|---|
-| before | 31, 32, **38**, 33 | 7 |
-| after | 31, 31, **35**, 33 | 4 |
-
-The residual 35 is `custom/ratio`'s ink sitting ~2px right of its own box centre, a
-subpixel rounding artifact that moves when ratio toggles glyph. Correcting for it
-would mean tuning one module against a *neighbour's* state, which is the thing the
-rule genuinely forbids. Left alone.
-
-The wider gap before the tray chevron is a different thing and is left alone too:
-`#custom-expand-icon` sits inside `group/tray-expander`, whose layout governs it —
-setting `min-width` there changes nothing, verified by sweeping it — and the gap
-reads as the boundary between the drawer and the status run.
-
-The centre trio needed new rules. Every centre module now carries a **left margin
-only**, so each gap is written in exactly one place and two adjacent margins can
-never sum into a double gap. Both icons get `min-width: 18px` — equal, so the trio
-stays symmetrical about the date, and fixed, so the weather glyph's 15..27px swing
-between sun, moon and cloud cannot slide the clock sideways underneath it.
+Every centre module carries a **left margin only**, so each gap is written in exactly
+one place and two adjacent margins can never sum into a double gap. Both icons get
+`min-width: 18px` — equal, so the trio stays symmetrical about the date, and fixed, so
+the weather glyph's 15..27px swing between sun, moon and cloud cannot slide the clock
+sideways underneath it.
 
 The margin is 5.5px, tighter than the 7.5px used by the modules that follow
 (`custom/update`, `custom/voxtype`): the trio is one thing, and should bind more
@@ -128,6 +79,86 @@ date/calendar pair sat at before weather joined them.
 The 3px asymmetry between those two gaps is the clock's own right side bearing, the
 `M` ending "PM". No margin can fix it, because it changes with the format string:
 `format-alt` ends in a digit. Left alone deliberately.
+
+### The right cluster
+
+Removing two modules left the survivors on the same grid, exactly as the uniform-pitch
+design (ADR-0013) predicted. That turned out to be the problem rather than the proof.
+
+### Uniform pitch was the wrong invariant
+
+With weather and cpu gone, the gap to the left of the network globe read as a hole.
+The boxes were not at fault — painting each module a flat colour showed spans of
+exactly 29 physical px, pitch exactly 50.0, inter-box gaps exactly 21. The grid was
+perfect. It was the wrong grid.
+
+**Pitch is not what the eye reads; it reads the gap between ink.** The bluetooth rune
+is 10.6 physical px wide where its neighbours are 16..19, at the same 16px ink height
+— narrow, not small. Centred in a shared 18px box it floated in ~9px of air per side
+against its neighbours' ~5, and the surplus pooled beside the globe. Every module
+obeyed the rule and the result still looked wrong, which is the signature of an
+invariant that was never the goal.
+
+The original comment defended uniform pitch on the grounds that ink changes between
+states, so no static margin set could equalise ink gaps. That is true only while every
+box is the same width. Size each box to its own glyph and the gap collapses to the
+margins, which are static — so the conclusion inverts.
+
+Two measurements were needed before that was usable:
+
+1. **These Nerd Font icons do not advance like text.** Pango allocates them about one
+   monospace cell wide regardless of how wide the glyph is drawn, so ink overflows the
+   box by a different amount per glyph. The obvious fix — let boxes size to content —
+   therefore makes things *worse*: gaps came out 30/23/24/30/28. Only an explicit
+   width per glyph works, which is why this ADR ends in a table of measured ink.
+2. **Waybar emits state classes to hang those widths on.** Verified by painting
+   `#network.ethernet` and `#bluetooth.on` and watching the box change, with
+   `#bluetooth.off` correctly not matching while bluetooth was on.
+
+The bluetooth glyph also changed family on the way: `format` was `U+F294`, Font
+Awesome's `bluetooth_b`, while the *same module's* other three states were already
+Material Design. It is now `U+F00AF`, so all four states are one family.
+
+### What it measures
+
+Every state was forced by patching both the glyph and the width its class would
+apply, then measured from a screenshot — not predicted from font metrics.
+
+| state | ink gaps (physical px, 1.67x) | spread |
+|---|---|---|
+| *before, any state* | 31, 32, **38**, 33 | **7** |
+| bt on / ethernet / headphone | 31, 30, 30, 31 | 1 |
+| bt connected | 31, 30, 31, 31 | 1 |
+| bt off / disabled | 31, 30, 30, 31 | 1 |
+| network wifi (all five bars) | 31, 30, 32, 30 | 2 |
+| network disconnected | 31, 30, 32, 30 | 2 |
+| pulseaudio vol-low | 31, 30, 30, 32 | 2 |
+| pulseaudio vol-high | 31, 30, 30, 31 | 1 |
+| pulseaudio muted | 31, 30, 30, 31 | 1 |
+
+Because a module's width never depends on a *neighbour's* state, nothing moves when
+another module changes.
+
+### The two compromises, stated plainly
+
+**Pulseaudio has no per-state control.** Waybar emits no class we could find — eight
+candidate names probed, none matched — and its volume ramp is picked by array index,
+which has no class at all. It is pinned to the headphone width. Measured cost: +2px on
+the gap to its left at low volume, nothing at high volume or muted. It is the
+rightmost module, so a width change there moves only its own left gap instead of
+reflowing the cluster; anything with an unclassable ramp belongs on that end.
+
+**Two margin pairs are asymmetric** — `#bluetooth` at 9.6/7.6 and `#bluetooth.connected`
+at 8.1/9.1, against the uniform 8.6. These cancel ~1.5px of subpixel rounding, not a
+neighbour's state: `custom/ratio` has a single fixed glyph (it carries state by opacity
+per ADR-0013, not by a second glyph), so the offset it contributes is constant and safe
+to cancel. That is the distinction that makes it legitimate, and it does not generalise
+— do not copy the trick onto a module whose neighbour changes glyph.
+
+The wider gap before the tray chevron is neither of these and is left alone:
+`#custom-expand-icon` sits inside `group/tray-expander`, whose layout governs it —
+`min-width` there changes nothing, swept across four values to confirm — and the gap
+reads as the boundary between the drawer and the status run.
 
 ## Consequences
 
