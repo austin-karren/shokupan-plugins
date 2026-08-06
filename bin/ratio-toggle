@@ -91,9 +91,11 @@ if [[ ${1-} == --status ]]; then
     hyprctl reload >/dev/null 2>&1 || true
   fi
   if [[ -f $FLAG ]]; then
-    printf '{"text":"'"$GLYPH"'","tooltip":"Single-window zen aspect ratio\\n\\nOn — a lone window is held to %s.\\nClick to disable.","class":"active"}\n' "$ASPECT_LABEL"
+    # GLYPH passed as an argument, not spliced into the format string: a stray
+    # % in the icon would otherwise be read as a format spec and corrupt the JSON.
+    printf '{"text":"%s","tooltip":"Single-window zen aspect ratio\\n\\nOn — a lone window is held to %s.\\nClick to disable.","class":"active"}\n' "$GLYPH" "$ASPECT_LABEL"
   else
-    printf '{"text":"'"$GLYPH"'","tooltip":"Single-window zen aspect ratio\\n\\nOff — a lone window fills the screen.\\nClick to enable."}\n'
+    printf '{"text":"%s","tooltip":"Single-window zen aspect ratio\\n\\nOff — a lone window fills the screen.\\nClick to enable."}\n' "$GLYPH"
   fi
   exit 0
 fi
