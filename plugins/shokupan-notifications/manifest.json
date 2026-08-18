@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "shokupan.notifications",
+  "name": "Notifications",
+  "version": "1.0.0",
+  "author": "shokupan",
+  "description": "The notification bell and history popup Omarchy shipped until r1046, kept alive as a third-party widget",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "Notifications.qml" },
+  "barWidget": {
+    "displayName": "Notifications",
+    "description": "Bell with unread count; click for pending and past notifications",
+    "category": "System",
+    "allowMultiple": false
+  }
+}
