@@ -4,6 +4,7 @@
   "name": "Notifications",
   "version": "1.0.0",
   "author": "shokupan",
+  "license": "MIT",
   "description": "The notification bell and history popup Omarchy shipped until r1046, kept alive as a third-party widget",
   "kinds": ["bar-widget"],
   "entryPoints": { "barWidget": "Notifications.qml" },
