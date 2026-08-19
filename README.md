@@ -1,9 +1,9 @@
-# shokupan
+# shokupan-plugins
 
 Quickshell plugins and a Tokyo Night bar override for [Omarchy](https://omarchy.org),
 extracted from one heavily-used desktop. Everything here is meant to be usable on
 any Omarchy machine — the personal half of that desktop lives in
-[dotfiles-arch](https://github.com/austin-karren/dotfiles-arch), and the
+[shokupan](https://github.com/austin-karren/shokupan), and the
 CachyOS-specific install path in
 [omarchy-desktop-on-cachyos](https://github.com/austin-karren/omarchy-desktop-on-cachyos).
 
@@ -36,7 +36,7 @@ git clone https://github.com/austin-karren/shokupan.git ~/.local/share/shokupan
 # symlink into a dangling one), then add the widget ids to shell.json.
 ```
 
-`loaf plugins` in dotfiles-arch does exactly that and is the reference
+`loaf plugins` in shokupan does exactly that and is the reference
 implementation if you want the layout it produces.
 
 ## Upstream drift
