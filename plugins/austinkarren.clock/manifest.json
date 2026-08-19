@@ -4,6 +4,7 @@
   "name": "Clock (calendar clicks)",
   "version": "1.0.0",
   "author": "shokupan",
+  "license": "MIT",
   "description": "Upstream's clock panel with day cells and the hero date opening GNOME Calendar on that day; a second click closes it (ADR-0006).",
   "kinds": [
     "bar-widget"

@@ -4,6 +4,7 @@
   "name": "DPMS Guard",
   "version": "1.0.0",
   "author": "shokupan",
+  "license": "MIT",
   "description": "Re-asserts display-off when a DisplayPort hotplug wakes the monitor while the session is locked and idle (USB-C deep-sleep race, ADR-0019)",
   "kinds": [
     "service"

@@ -4,6 +4,7 @@
   "name": "Omarchy Menu (power glyph)",
   "version": "1.0.0",
   "author": "shokupan",
+  "license": "MIT",
   "description": "The Omarchy Menu button wearing a power glyph instead of the logo; left opens the menu, right opens a terminal. Kept identity deviation (user's word, 2026-08-15, ADR-0029)",
   "kinds": [
     "bar-widget"

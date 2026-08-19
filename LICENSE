@@ -1,0 +1,103 @@
+MIT License
+
+This repository contains work derived from the Omarchy project
+(https://github.com/basecamp/omarchy), which is MIT licensed, alongside
+original work. Because the mix differs per file, the derivation is named
+per path rather than claimed in one blanket sentence. Line counts are
+against Omarchy 4.0.0.r1744 unless noted.
+
+Upstream Omarchy's work, carried verbatim
+-----------------------------------------
+
+  plugins/austinkarren.network/Panel.qml
+      Byte-identical to shell/plugins/panels/network/Panel.qml (1,958 lines).
+      Entirely upstream's; this repo changes nothing in it.
+
+  plugins/austinkarren.clock/Model.js
+      Byte-identical to shell/plugins/panels/clock/Model.js (296 lines).
+
+Upstream Omarchy's work, with modifications by Austin Karren
+------------------------------------------------------------
+
+The bulk of each file below is upstream's; the modifications are small and
+localised, and are marked in-file where practical.
+
+  plugins/austinkarren.clock/Panel.qml
+      From shell/plugins/panels/clock/Panel.qml (773 lines). Modified: day
+      cells and the hero date open GNOME Calendar on the clicked day, plus
+      the hover fill that makes the grid read as a picker (ADR-0006).
+
+  plugins/austinkarren.clock/BarWidget.qml
+      From shell/plugins/panels/clock/BarWidget.qml (185 lines). Modified:
+      one five-line branch routing the left click through clock-click so a
+      second click closes the calendar popup.
+
+  plugins/austinkarren.network/Model.js
+      From shell/plugins/panels/network/Model.js (371 lines). Modified: one
+      line — the wired glyph is a globe (U+F059F) rather than upstream's
+      RJ45 socket (U+F0200), ADR-0029.
+
+  plugins/shokupan-notifications/Notifications.qml
+      From shell/plugins/notifications/BarWidget.qml (412 lines) as it stood
+      at basecamp/omarchy commit fc4caf3c^, before upstream removed it.
+      Modified: the module name, and four null-guard lines that let it run
+      as a third-party widget. Substantively this file is upstream's.
+
+  plugins/shokupan-notifications/NotificationLogic.js
+      From shell/plugins/notifications/NotificationLogic.js (242 lines) at
+      the same revision. Modified: five lines.
+
+  bar/modules/indicators.qml
+      From shell/plugins/bar/widgets/Indicators.qml (471 lines). Modified:
+      a header comment and roughly fourteen lines so the indicator loader
+      resolves from a user directory first and falls back to the package
+      copy. The six stock indicators it loads remain upstream's, from the
+      installed package.
+
+  plugins/shokupan-omenu/BarWidget.qml
+      Adapted from shell/plugins/menu/BarWidget.qml. The WidgetButton
+      structure, the horizontalMargin value and both click actions are
+      upstream's, carried over near-verbatim; the glyph, the tooltip and
+      the plain-Item root the third-party plugin loader injects into are
+      modifications.
+
+  themes/tokyo-night/shell.bar.toml
+      The [bar] section shape, its non-colour defaults and two of its
+      comments are carried from upstream's default/themed/shell.toml.tpl.
+      The pinned colours are original.
+
+Original work by Austin Karren
+------------------------------
+
+Written for this repository, consuming Omarchy's documented plugin, widget
+and indicator APIs rather than copying its implementations:
+
+  plugins/shokupan-apexshot/     plugins/shokupan-capture/
+  plugins/shokupan-dpms-guard/   bar/indicators/Ratio.qml
+  bin/                           hooks/
+  docs/                          packages/plugins
+  README.md                      plugins/*/manifest.json
+
+The original copyright notice is retained below as the license requires.
+
+Copyright (c) David Heinemeier Hansson
+Copyright (c) 2026 Austin Karren (modifications and original work)
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
