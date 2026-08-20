@@ -69,3 +69,30 @@ stylesheet, so the app stays orange while its captures are themed. Feature
 request drafted at `docs/upstream/apexshot-theme-support.md`. Its
 annotator (`tensaku` 0.26.6) has no documented colour surface at all — a
 feature request, not something to patch.*
+
+*Addendum 2026-08-19 (publishing is seven repos, installing is still the
+monorepo): rule 4's "extracting to a single `shokupan-plugins` monorepo" is no
+longer where publishing ends. The published edge is now seven standalone public
+repos, one per plugin —
+`austin-karren/omarchy-{network-globe,clock-calendar,notification-center,dpms-guard,capture-button,apexshot,menu-power-glyph}`
+— because `omarchy plugin add` clones a URL and reads `manifest.json` at the repo
+root, which one monorepo cannot present seven times. The monorepo did not become
+a staging area, though: it remains the install path for this machine. `loaf
+plugins` clones `shokupan-plugins` and links `plugins/*`, `bar/{modules,
+indicators}/*`, `bin/*` and `hooks/theme-set.d/*` out of that checkout (themes
+are copied, not linked). `~/shokupan/packages/plugins` is a record of the
+published edge, read by `loaf plugins --index`, and installs nothing. The
+installer was not rewired onto the seven repos for two reasons: `packages/forks`
+records monorepo-relative paths (`plugins/austinkarren.clock/Panel.qml` and
+friends), which a repo-root checkout does not have; and `bar/`, `bin/`,
+`hooks/`, `themes/` are monorepo-level directories with no per-plugin-repo
+equivalent. Development therefore still happens here, and rule 4's first half —
+develop in-repo — is unchanged.*
+
+*Open gap, not a solved problem: nothing checks that the seven published repos
+are in sync with this monorepo. The split repos are pushed by hand, and `loaf
+plugins --index` only verifies that each recorded id resolves to a plugin in the
+local checkout (and that no shipped plugin is unrecorded) — it never compares a
+published repo's HEAD against the monorepo copy. So someone following the README
+can install older code than this machine runs. Closing it means a real
+comparison, not a louder index.*
