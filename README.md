@@ -19,9 +19,11 @@ Verified against **Omarchy 4.0.0.r1744** (quattro).
 | `plugins/shokupan-dpms-guard` | Keeps the display off while locked, for monitors whose USB-C deep sleep hotplugs the connector and wakes the output |
 | `plugins/austinkarren.clock` | Clone of upstream's clock panel where day cells and the hero date open GNOME Calendar on the clicked day, and a second click closes it |
 | `plugins/austinkarren.network` | Clone of upstream's network panel showing a globe for wired instead of an RJ45 socket |
+| `plugins/austinkarren.notifications` | Clone of upstream's notification service that recovers an app's name and icon from the `desktop-entry` hint when the sender sent no `app_name` — the blank slot Ghostty and every sandboxed app land in |
 | `bar/` | The indicators fork, which adds a user indicator (the zen aspect-ratio toggle) to a cluster upstream loads only from its own directory |
 | `themes/tokyo-night/shell.bar.toml` | Pins the bar near-black under Tokyo Night so it reads as system chrome. A `[bar]` section override, the same mechanism stock tokyo-night uses for `shell.lock.toml` |
 | `bin/` | The scripts the plugins shell out to. They are not optional: `austinkarren.clock` calls `calendar-toggle` and `clock-click`, and the Ratio indicator calls `ratio-toggle` |
+| `test/` | The two suites for `austinkarren.notifications`' fallback: the logic under node, and the desktop-entry resolver against the real desktop database |
 | `docs/adr/` | Why each of these exists. Numbers are the originals and have gaps — the decisions that stayed personal kept their numbers in the other repo |
 | `retired/shokupan-notifications` | **Retired 2026-08-24**, not shipped and not linked. Omarchy's own notification bell and history popup, which upstream removed in `fc4caf3c` and this restored, until it stopped displaying history. Kept for its history and provenance only — the reasoning is ADR-0044's 2026-08-24 addendum |
 

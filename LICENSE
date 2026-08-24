@@ -16,6 +16,10 @@ Upstream Omarchy's work, carried verbatim
   plugins/austinkarren.clock/Model.js
       Byte-identical to shell/plugins/panels/clock/Model.js (296 lines).
 
+  plugins/austinkarren.notifications/components/NotificationCard.qml
+      Byte-identical to shell/plugins/notifications/components/
+      NotificationCard.qml (189 lines).
+
 Upstream Omarchy's work, with modifications by Austin Karren
 ------------------------------------------------------------
 
@@ -36,6 +40,18 @@ localised, and are marked in-file where practical.
       From shell/plugins/panels/network/Model.js (371 lines). Modified: one
       line — the wired glyph is a globe (U+F059F) rather than upstream's
       RJ45 socket (U+F0200), ADR-0029.
+
+  plugins/austinkarren.notifications/Service.qml
+      From shell/plugins/notifications/Service.qml (1,062 lines). Modified:
+      four added lines and three changed ones, marked // SHOKUPAN: — one
+      DesktopEntryLookup declaration, and the three call sites that pass its
+      resolver to NotificationLogic.
+
+  plugins/austinkarren.notifications/NotificationLogic.js
+      From shell/plugins/notifications/NotificationLogic.js (368 lines).
+      Modified: the desktop-entry fallback added (desktopEntryOf,
+      desktopEntryCandidates, resolveDesktopEntry, appNameOf, appIconOf), and
+      five lines changed inside snapshotOf and replacementSnapshot to use it.
 
   retired/shokupan-notifications/Notifications.qml
       From shell/plugins/notifications/BarWidget.qml (412 lines) as it stood
@@ -77,6 +93,8 @@ and indicator APIs rather than copying its implementations:
   bin/                           hooks/
   docs/                          packages/plugins
   README.md                      plugins/*/manifest.json
+  test/                          plugins/*/README.md
+  plugins/austinkarren.notifications/DesktopEntryLookup.qml
 
 The original copyright notice is retained below as the license requires.
 
