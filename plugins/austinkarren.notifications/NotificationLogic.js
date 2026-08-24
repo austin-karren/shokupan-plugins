@@ -163,6 +163,86 @@ function appIconOf(notification, resolved) {
   return ""
 }
 
+// SHOKUPAN: the slot shift.
+//
+// herdr delivers through the terminal using OSC 9, which carries one string and
+// no title. Ghostty therefore has no title to pass on and hardcodes the literal
+// "Ghostty" as its summary, so every agent notification on this machine arrives
+// as
+//
+//   app "Ghostty" / summary "Ghostty" / body "claude finished: shokupan · 4"
+//
+// — the app's own name occupying the slot the message should be in, and the
+// message sitting one slot lower than it belongs. herdr 0.8.2 has no way to
+// emit OSC 777 (no config key, no flag, no env var), so this cannot be fixed at
+// the source. It is the input that is wrong and not the renderer: the
+// OSC777TITLE / OSC777BODY probe rows in this machine's own notification
+// history render with no duplication at all, against the same terminal and the
+// same daemon.
+//
+// The rule: when a notification's summary is exactly the app's own name and
+// there is a body underneath it, the body moves up into the summary slot.
+//
+// WHICH NAME IT COMPARES AGAINST. The name that will be STORED — what
+// appNameOf() resolved — and not the wire app_name. Ghostty sends
+// app_name = "" and takes "Ghostty" from its desktop file's Name= through the
+// fallback above, so a rule that compared the wire value would never once fire
+// on the only sender that needs it. It is also the definitionally right test:
+// the duplication being removed is between two things the user can SEE, the app
+// slot and the summary slot, so the two strings compared are exactly the two
+// strings drawn — whichever of the three sources the drawn name came from.
+//
+// HOW EXACTLY IT MATCHES. Trimmed, not case-folded. Whitespace around a title
+// is never meaningful, and it does occur — a real notify-send row on this
+// machine carries six leading spaces in its summary — so trimming costs nothing
+// and catches a sender that pads. Case is meaningful: an app that styles its
+// own name differently from its Name= ("SIGNAL" against "Signal") is making a
+// choice, and folding case widens what this mangles while buying no sender that
+// exists here.
+//
+// WHAT BECOMES OF THE BODY. Its first line becomes the summary and the rest
+// stays behind as the body — app name / message / detail, which is the shape
+// asked for. It degrades to an empty body in the single-line case, which is all
+// herdr can actually produce: measured 2026-08-24, herdr joins its title and
+// body as "<title>: <body>" and flattens newlines to spaces before the OSC 9
+// payload, so a herdr toast is always exactly one line. Leaving the body alone
+// would print the same text twice; emptying it unconditionally would throw away
+// a multi-line sender's detail.
+//
+// WHEN IT MUST NOT FIRE. An empty body promotes nothing and leaves the row with
+// no message at all, which is worse than the duplication it removes. A body
+// that is empty, whitespace-only, or nothing but blank lines is therefore left
+// exactly as it is.
+//
+// This is a heuristic and is meant to be provisional: an app that legitimately
+// titles a notification with its own name has its body promoted too. Every
+// sender on this machine was checked against it before it shipped. It should be
+// retired the day herdr can emit OSC 777. See the plugin README.
+function promoteBodyIntoSummary(app, appIcon, summary, body) {
+  var head = String(summary || "").trim()
+  if (head === "" || head !== String(app || "").trim()) return null
+
+  // Blank leading lines carry no message; promoting one would blank the very
+  // slot the promotion exists to fill.
+  var text = String(body || "").replace(/\r\n/g, "\n").replace(/^(?:[ \t]*\n)+/, "")
+  if (text.trim() === "") return null
+
+  var cut = text.indexOf("\n")
+  var first = cut < 0 ? text : text.slice(0, cut)
+  var rest = cut < 0 ? "" : text.slice(cut + 1).replace(/^(?:[ \t]*\n)+/, "")
+
+  // The summary slot is drawn raw; the body slot is drawn through
+  // sanitizeBody(). Text moving up has to be cleaned on the way, or a
+  // Chromium-family sender's leading-URL prefix and its <img> tags would
+  // surface as markup in a slot that nothing cleans.
+  var promoted = sanitizeBody(first, app, appIcon).trim()
+  // Cleaning can leave nothing behind — a body that was only an <img>. A blank
+  // summary is worse than the duplication, so that one stays as it was.
+  if (promoted === "") return null
+
+  return { summary: promoted, body: rest }
+}
+
 function snapshotOf(notification, timestamp, lookup) {
   var n = notification || {}
   var id = n.id || 0
@@ -171,13 +251,27 @@ function snapshotOf(notification, timestamp, lookup) {
   // SHOKUPAN: resolved once and shared by both fallbacks below — one desktop
   // database lookup per notification, not two.
   var resolved = resolveDesktopEntry(desktopEntryOf(n), lookup)
+  var app = appNameOf(n, resolved)        // SHOKUPAN: was inline n.appName || ""
+  var appIcon = appIconOf(n, resolved)    // SHOKUPAN: was inline n.appIcon || ""
+  var summary = String(n.summary || "")
+  var body = n.body || ""
+  // SHOKUPAN: the slot shift, applied here because this is the one place both
+  // the live popup card and the persisted row are built from — popupModel takes
+  // this object and the history file is written from it, so the promotion
+  // reaches the toast, the notification centre and jankeesvw's history row
+  // without any of them knowing about it.
+  var promoted = promoteBodyIntoSummary(app, appIcon, summary, body)
+  if (promoted) {
+    summary = promoted.summary
+    body = promoted.body
+  }
   return {
     id: id,
     originalId: id,
-    app: appNameOf(n, resolved),          // SHOKUPAN: was n.appName || ""
-    appIcon: appIconOf(n, resolved),      // SHOKUPAN: was n.appIcon || ""
-    summary: String(n.summary || ""),
-    body: n.body || "",
+    app: app,
+    appIcon: appIcon,
+    summary: summary,
+    body: body,
     image: n.image || "",
     glyph: glyphFromHints(n.hints),
     exec: execFromHints(n.hints),
@@ -451,6 +545,7 @@ if (typeof module !== "undefined") {
     resolveDesktopEntry: resolveDesktopEntry,
     appNameOf: appNameOf,
     appIconOf: appIconOf,
+    promoteBodyIntoSummary: promoteBodyIntoSummary,
     snapshotOf: snapshotOf,
     popupRoles: popupRoles,
     popupRowChanged: popupRowChanged,
