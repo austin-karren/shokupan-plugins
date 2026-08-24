@@ -37,13 +37,13 @@ localised, and are marked in-file where practical.
       line — the wired glyph is a globe (U+F059F) rather than upstream's
       RJ45 socket (U+F0200), ADR-0029.
 
-  plugins/shokupan-notifications/Notifications.qml
+  retired/shokupan-notifications/Notifications.qml
       From shell/plugins/notifications/BarWidget.qml (412 lines) as it stood
       at basecamp/omarchy commit fc4caf3c^, before upstream removed it.
       Modified: the module name, and four null-guard lines that let it run
       as a third-party widget. Substantively this file is upstream's.
 
-  plugins/shokupan-notifications/NotificationLogic.js
+  retired/shokupan-notifications/NotificationLogic.js
       From shell/plugins/notifications/NotificationLogic.js (242 lines) at
       the same revision. Modified: five lines.
 
