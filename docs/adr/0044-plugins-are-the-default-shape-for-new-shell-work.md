@@ -96,3 +96,43 @@ local checkout (and that no shipped plugin is unrecorded) — it never compares 
 published repo's HEAD against the monorepo copy. So someone following the README
 can install older code than this machine runs. Closing it means a real
 comparison, not a louder index.*
+
+*Addendum 2026-08-24 (the notification centre is retired; publishing is six
+repos): `shokupan.notifications` is gone from the shipped set. The sequence:
+upstream's `fc4caf3c` (25 Jul 2026) deleted its own notification-center bar
+widget and never replaced it; this repo carried that deleted widget forward as a
+third-party plugin, near-verbatim, so the bar kept a bell. On 2026-08-24 ours
+stopped working — toasts still arrived, but the history popup displayed nothing —
+and Austin installed `jankeesvw.notification-center` instead
+(`omarchy plugin add https://github.com/jankeesvw/omarchy-notification-center.git
+--enable`), moved it into the bell's slot after `omarchy.tailscale`, and disabled
+ours.*
+
+*It is retired rather than fixed, deliberately. The plugin only ever existed
+because nothing maintained filled the gap, and its own README already said to
+prefer upstream's if Omarchy shipped one again; a maintained third-party plugin
+satisfies that condition just as well as a first-party one would. Fixing it would
+mean owning 414 lines of someone else's deleted UI indefinitely to duplicate
+something now maintained elsewhere. The breakage was not diagnosed — that was
+scope Austin explicitly declined.*
+
+*What that changes concretely. The source is **not deleted**: it moved to
+`retired/shokupan-notifications/` with its history intact. That path is not
+arbitrary — `loaf doctor` asserts every directory under `plugins/` is symlinked
+into `~/.config/omarchy/plugins/`, so "in the tree but unlinked" is unreachable
+while it sits under `plugins/`. Moving it out of that glob is what makes
+unpublished-and-unlinked expressible without weakening the check that catches a
+half-installed set. The previous addendum's seven published repos are now six:
+`austin-karren/omarchy-notification-center` is dropped from both
+`packages/plugins` indexes and is no longer a claim this repo makes. The repo
+itself is still public on GitHub and is not touched here — nothing is pushed or
+archived without Austin's explicit go (rule 5). Its marketplace submission draft
+was withdrawn rather than filed; it was never submitted.*
+
+*`jankeesvw.notification-center` is not ours. It is Austin's own
+`omarchy plugin add` install, a real directory under
+`~/.config/omarchy/plugins/`, not linked out of this checkout. It is deliberately
+absent from `packages/plugins`: that index records what this repo publishes, and
+adding someone else's plugin to it would both misstate authorship and make
+`loaf plugins` try to manage a directory it does not own.*
+

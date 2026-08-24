@@ -17,13 +17,13 @@ Verified against **Omarchy 4.0.0.r1744** (quattro).
 | `plugins/shokupan-apexshot` | Screenshot button: left area, middle record, right full screen |
 | `plugins/shokupan-capture` | The same three clicks on the native `omarchy-capture-*` tools. Marked DORMANT — kept as the drop-in swap when the native flow matures |
 | `plugins/shokupan-dpms-guard` | Keeps the display off while locked, for monitors whose USB-C deep sleep hotplugs the connector and wakes the output |
-| `plugins/shokupan-notifications` | Omarchy's own notification bell and history popup, which upstream removed in `fc4caf3c`, kept alive as a third-party widget |
 | `plugins/austinkarren.clock` | Clone of upstream's clock panel where day cells and the hero date open GNOME Calendar on the clicked day, and a second click closes it |
 | `plugins/austinkarren.network` | Clone of upstream's network panel showing a globe for wired instead of an RJ45 socket |
 | `bar/` | The indicators fork, which adds a user indicator (the zen aspect-ratio toggle) to a cluster upstream loads only from its own directory |
 | `themes/tokyo-night/shell.bar.toml` | Pins the bar near-black under Tokyo Night so it reads as system chrome. A `[bar]` section override, the same mechanism stock tokyo-night uses for `shell.lock.toml` |
 | `bin/` | The scripts the plugins shell out to. They are not optional: `austinkarren.clock` calls `calendar-toggle` and `clock-click`, and the Ratio indicator calls `ratio-toggle` |
 | `docs/adr/` | Why each of these exists. Numbers are the originals and have gaps — the decisions that stayed personal kept their numbers in the other repo |
+| `retired/shokupan-notifications` | **Retired 2026-08-24**, not shipped and not linked. Omarchy's own notification bell and history popup, which upstream removed in `fc4caf3c` and this restored, until it stopped displaying history. Kept for its history and provenance only — the reasoning is ADR-0044's 2026-08-24 addendum |
 
 ## Installing
 
@@ -57,10 +57,10 @@ edits are small and marked in-file:
 - `plugins/austinkarren.clock/Panel.qml` — calendar-opening date cells (ADR-0006)
 - `plugins/austinkarren.clock/BarWidget.qml` — one branch, the dialog-aware left click
 - `plugins/austinkarren.network/Model.js` — one line, the wired globe glyph (ADR-0029)
-- `plugins/shokupan-notifications/Notifications.qml` — upstream's own notification
+- `retired/shokupan-notifications/Notifications.qml` (retired) — upstream's own notification
   centre widget (`shell/plugins/notifications/BarWidget.qml`, 412 lines) as it
   stood before `fc4caf3c` removed it, plus four null guards
-- `plugins/shokupan-notifications/NotificationLogic.js` — same revision, five lines changed
+- `retired/shokupan-notifications/NotificationLogic.js` (retired) — same revision, five lines changed
 - `bar/modules/indicators.qml` — upstream's 471-line indicators cluster plus the
   ~14-line user-directory search path this fork exists for
 - `plugins/shokupan-omenu/BarWidget.qml` — adapted from upstream's menu bar widget;

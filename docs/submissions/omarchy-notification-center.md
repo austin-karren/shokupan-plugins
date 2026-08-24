@@ -1,3 +1,12 @@
+<!-- WITHDRAWN 2026-08-24 — DO NOT FILE. Never submitted, and now will not be.
+     The plugin is retired: it stopped displaying notification history, and
+     Austin replaced it with the maintained jankeesvw.notification-center
+     rather than fixing ours. Austin dropped it from the submission list at the
+     same time. The source moved to retired/shokupan-notifications/; the
+     reasoning is ADR-0044's 2026-08-24 addendum. Kept as the record of what
+     was drafted and withdrawn — the body below describes a plugin that no
+     longer ships, so every present-tense claim in it is now false. -->
+
 <!-- Ready to file, NOT filed. Austin files these himself:
      gh issue create --repo HANCORE-linux/omarchy-plugin-marketplace \
        --title "[Plugin]: Notification center" --body-file docs/submissions/omarchy-notification-center.md

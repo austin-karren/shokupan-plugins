@@ -3,6 +3,18 @@
 **Status: draft — not posted.** ADR-0044 rule 5: issues first, nothing posted
 without an explicit go from Austin.
 
+**Stale as written, 2026-08-24 — needs a rewrite before it could be posted.**
+The question it asks upstream is still open and still worth asking: as far as we
+know Omarchy still has no bar entry point for notification history. But the
+"For disclosure" paragraph below is no longer true. Ours is retired — it stopped
+displaying history and was replaced by `jankeesvw.notification-center`, a
+maintained third-party plugin, on 2026-08-24. So we are no longer carrying
+upstream's deleted `BarWidget.qml`, and the sentence "the removed file itself is
+what I am running" is false. Anyone reviving this draft must cut or rewrite that
+paragraph; posting it as-is would tell upstream something untrue. The retirement
+reasoning is ADR-0044's 2026-08-24 addendum, and the source is now under
+`retired/shokupan-notifications/`. Nothing here has been posted.
+
 Upstream: basecamp/omarchy. Commit `fc4caf3c`, "Extract notification center bar
 widget" (25 Jul 2026).
 
@@ -48,18 +60,20 @@ your code, not mine, which is the reason for asking rather than just shipping.
 
 ## Notes for us (not part of the issue)
 
-`shokupan.notifications` **is** upstream's deleted widget, restored. It is not
-our design and we should not present it as one.
+`shokupan.notifications` **was** upstream's deleted widget, restored. It was
+never our design and we should not present it as one. It is retired as of
+2026-08-24; the paths below moved from `plugins/` to `retired/`, and the
+line counts still describe the files as they stand there.
 
-- `plugins/shokupan-notifications/Notifications.qml` (414 lines) is
+- `retired/shokupan-notifications/Notifications.qml` (414 lines) is
   `shell/plugins/notifications/BarWidget.qml` (412 lines) as it stood at
   `fc4caf3c^`, with five lines changed: the `moduleName`, and four null guards.
-- `plugins/shokupan-notifications/NotificationLogic.js` (244 lines) is the same
+- `retired/shokupan-notifications/NotificationLogic.js` (244 lines) is the same
   revision's 242-line file with five lines changed.
 - `pendingModel`/`pastModel` do exist on the service. The two "Cannot read
   property count of undefined" warnings fired once at startup, before
   `firstPartyServiceFor('omarchy.notifications')` resolved; guarding the two
-  properties (`Notifications.qml:48-49`) cleared them. An earlier note here
+  properties (the two `count` reads in `Notifications.qml`) cleared them. An earlier note here
   read those warnings as proof the widget could not work and described ours as
   "a thin button over `showHistory`" — that thin button was a regression,
   reverted in `8bd480a`, and this file's claim went stale with it.
