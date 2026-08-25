@@ -92,7 +92,13 @@ let snap = L.snapshotOf(ghosttyNotification, 1787588763449, lookup)
 is("ghostty: the blank app name becomes the desktop file's Name=", snap.app, "Ghostty")
 is("ghostty: the icon Quickshell already resolved is left alone",
   snap.appIcon, "com.mitchellh.ghostty")
-is("ghostty: the summary is untouched", snap.summary, "Ghostty")
+// Was "the summary is untouched" before the slot shift landed. The summary here
+// is the literal "Ghostty" Ghostty hardcodes because OSC 9 gave it no title, so
+// it is exactly the case the shift exists for and it does not survive.
+is("ghostty: the hardcoded self-named summary gives way to the message",
+  snap.summary, "claude finished: notifentry")
+is("ghostty: and the body it came from is emptied rather than duplicated",
+  snap.body, "")
 
 // Slack through xdg-desktop-portal-gtk, captured as stored record 245. Both
 // app_name and app_icon are empty: the portal hardcodes "" for the name, and
@@ -164,6 +170,179 @@ is("partial resolve: an icon with no name falls back to the raw value", snap.app
 is("partial resolve: and still fixes the icon", snap.appIcon, "/i.png")
 
 // ---------------------------------------------------------
+// The slot shift: promoting the body when the summary is the app's own name
+// ---------------------------------------------------------
+
+// The rule is a pure function of three fields, so it is asserted directly as
+// well as through snapshotOf. app_icon is passed because the promoted text is
+// sanitized on its way into a slot that is drawn raw.
+function promote(app, appIcon, summary, body) {
+  return L.promoteBodyIntoSummary(app, appIcon, summary, body)
+}
+
+// The case this exists for, field for field from a stored record on this
+// machine (history/1787607461116-4.json).
+isDeep("shift: the Ghostty case fires and the message moves up one slot",
+  promote("Ghostty", "com.mitchellh.ghostty", "Ghostty", "claude finished: gap-payments · 14"),
+  { summary: "claude finished: gap-payments · 14", body: "" })
+
+// A sender with something real to say in its summary is never touched — this is
+// every correctly-behaved sender on the machine, and the whole risk the rule
+// carries is that it might not be.
+is("shift: a summary that is not the app's name does not fire",
+  promote("Slack", "", "New message from Jan", "see you at four"), null)
+is("shift: a summary that merely CONTAINS the app name does not fire",
+  promote("Ghostty", "", "Ghostty crashed", "exit code 1"), null)
+is("shift: the app name merely containing the summary does not fire",
+  promote("Ghostty Terminal", "", "Ghostty", "body"), null)
+
+// Promoting nothing would leave the row with no message at all, which is worse
+// than the duplication the rule removes.
+is("shift: an empty body does not fire, or the row would be blanked",
+  promote("Ghostty", "", "Ghostty", ""), null)
+is("shift: an absent body does not fire", promote("Ghostty", "", "Ghostty"), null)
+is("shift: a whitespace-only body does not fire",
+  promote("Ghostty", "", "Ghostty", "   \t  "), null)
+is("shift: a body of nothing but blank lines does not fire",
+  promote("Ghostty", "", "Ghostty", "\n  \n\n"), null)
+
+// A multi-line body keeps its detail: first line up, the rest stays behind.
+// That is app name / message / detail, which is the shape asked for. herdr
+// itself cannot produce one — it flattens newlines to spaces before the OSC 9
+// payload, measured 2026-08-24 — but Omarchy's own senders do
+// (omarchy-notification-send is called with $'...\n...' in first-run/welcome.sh)
+// so the branch is not hypothetical for every sender, only for this one.
+isDeep("shift: a multi-line body promotes its first line and keeps the rest",
+  promote("Ghostty", "", "Ghostty", "the message\nthe detail\nmore detail"),
+  { summary: "the message", body: "the detail\nmore detail" })
+isDeep("shift: CRLF is normalised before the split",
+  promote("Ghostty", "", "Ghostty", "the message\r\nthe detail"),
+  { summary: "the message", body: "the detail" })
+// The assertion above passes with or without the CRLF normalisation, because
+// trimming the promoted line takes the stray \r off anyway. This one does not:
+// the blank-line strip on the REMAINDER matches "\n" and never "\r\n", so
+// without the normalisation the body keeps a leading blank line.
+isDeep("shift: a CRLF blank line under the first is dropped like an LF one",
+  promote("Ghostty", "", "Ghostty", "the message\r\n\r\nthe detail"),
+  { summary: "the message", body: "the detail" })
+isDeep("shift: a blank line under the first is dropped, not drawn as a gap",
+  promote("Ghostty", "", "Ghostty", "the message\n\nthe detail"),
+  { summary: "the message", body: "the detail" })
+isDeep("shift: leading blank lines are skipped rather than promoted",
+  promote("Ghostty", "", "Ghostty", "\n\nthe message\nthe detail"),
+  { summary: "the message", body: "the detail" })
+
+// Trimmed, not case-folded. A real notify-send row on this machine carries six
+// leading spaces in its summary, so padding happens; case, by contrast, is a
+// sender's own choice and folding it would only widen what this mangles.
+isDeep("shift: a padded summary still matches the app name",
+  promote("Ghostty", "", "  Ghostty  ", "the message"),
+  { summary: "the message", body: "" })
+isDeep("shift: a padded app name still matches the summary",
+  promote(" Ghostty ", "", "Ghostty", "the message"),
+  { summary: "the message", body: "" })
+is("shift: a differently-cased name is a different name",
+  promote("Signal", "", "SIGNAL", "the message"), null)
+
+// Nothing to compare means nothing to fire on. Two blank slots are not a match.
+is("shift: an empty app name and an empty summary is not a match",
+  promote("", "", "", "the message"), null)
+is("shift: a blank app name does not match a blank summary through trimming",
+  promote("  ", "", "  ", "the message"), null)
+
+// Text moving into the summary slot is drawn raw, while the body slot is drawn
+// through sanitizeBody(). Cleaning it on the way is what stops a Chromium-family
+// sender's leading-URL prefix and its <img> tags surfacing as markup.
+isDeep("shift: an <img> in the promoted line is stripped on the way up",
+  promote("Helium", "", "Helium", "<img src=x>the message"),
+  { summary: "the message", body: "" })
+// "Chromium-derived" is upstream's own isChromiumDerived() list, matched on the
+// app name and icon: chrom / brave / vivaldi / microsoft-edge / opera. It does
+// NOT match "Helium", the Chromium fork actually installed here — a gap in
+// upstream's sanitizeBody() that predates this rule and is not this rule's to
+// close, so the sender asserted here is one the list does recognise.
+isDeep("shift: a chromium sender's leading URL is stripped on the way up",
+  promote("Chromium", "chromium", "Chromium", "example.com the message"),
+  { summary: "the message", body: "" })
+is("shift: a sender outside that list keeps its leading URL, as in the body slot",
+  promote("Helium", "helium-browser", "Helium", "example.com the message").summary,
+  "example.com the message")
+is("shift: a line that cleans away to nothing does not fire",
+  promote("Helium", "", "Helium", "<img src=x>"), null)
+
+// ---------------------------------------------------------
+// The slot shift through snapshotOf, where it actually runs
+// ---------------------------------------------------------
+
+// The comparison is against the name that will be STORED, not the wire
+// app_name. Ghostty sends app_name = "" and only has a name at all because the
+// desktop-entry fallback recovered one — so a rule that compared the wire value
+// would never fire on the one sender that needs it. This is the assertion that
+// catches that mistake.
+snap = L.snapshotOf({
+  id: 100, appName: "", appIcon: "com.mitchellh.ghostty",
+  desktopEntry: "com.mitchellh.ghostty",
+  summary: "Ghostty", body: "claude finished: gap-payments · 14", urgency: 1,
+}, 1, lookup)
+is("shift/snapshot: fires against the RESOLVED name, not the empty wire one",
+  snap.summary, "claude finished: gap-payments · 14")
+is("shift/snapshot: the app slot still holds the resolved name", snap.app, "Ghostty")
+is("shift/snapshot: the body is emptied, not duplicated", snap.body, "")
+
+// The other half of the same decision: a name that came from the RAW hint
+// because nothing resolved is still the name being drawn, so the summary
+// duplicating it is still the duplication this removes.
+snap = L.snapshotOf({
+  id: 101, appName: "", appIcon: "", desktopEntry: "com.example.nope",
+  summary: "com.example.nope", body: "the message",
+}, 1, lookup)
+is("shift/snapshot: fires on a name that fell back to the raw hint value",
+  snap.summary, "the message")
+is("shift/snapshot: the raw hint is still what the app slot holds",
+  snap.app, "com.example.nope")
+
+// A sender that named itself on the wire is compared against what it sent,
+// because that is what gets drawn.
+snap = L.snapshotOf({ id: 102, appName: "Ghostty", appIcon: "", summary: "Ghostty",
+  body: "the message" }, 1, lookup)
+is("shift/snapshot: fires on a name the sender set itself", snap.summary, "the message")
+
+// Every sender that renders correctly today goes on rendering correctly.
+snap = L.snapshotOf({ id: 103, appName: "omarchy-action", appIcon: "",
+  summary: "Pending Omarchy Migrations", body: "Click to review them." }, 1, lookup)
+is("shift/snapshot: omarchy's own toasts are untouched",
+  snap.summary, "Pending Omarchy Migrations")
+is("shift/snapshot: and keep their body", snap.body, "Click to review them.")
+
+// The weather widget's right click sends a headline and no description at all.
+snap = L.snapshotOf({ id: 104, appName: "omarchy-action", appIcon: "",
+  summary: "Clear · 18°C", body: "" }, 1, lookup)
+is("shift/snapshot: a headline-only sender keeps its headline", snap.summary, "Clear · 18°C")
+
+// dismiss() in Service.qml takes a toast off the screen by summary substring,
+// and the first-run notifications are its callers. They are omarchy-action
+// senders with real summaries, so the shift never rewrites a summary that
+// something else matches on — assert it rather than assume it.
+snap = L.snapshotOf({ id: 105, appName: "omarchy-action", appIcon: "",
+  summary: "Setup Wi-Fi", body: "Click to configure the wireless network." }, 1, lookup)
+is("shift/snapshot: a summary dismiss() matches on is not rewritten",
+  snap.summary, "Setup Wi-Fi")
+
+// A replaces_id update rebuilds the row from scratch, so the shift has to reach
+// that path too — otherwise a Ghostty toast would read correctly until its first
+// edit and wrongly afterwards, which is worse than never shifting because it
+// looks intermittent.
+const shiftedReplacement = L.replacementSnapshot({
+  id: 106, appName: "", appIcon: "com.mitchellh.ghostty",
+  desktopEntry: "com.mitchellh.ghostty",
+  summary: "Ghostty", body: "claude needs attention: shokupan · 4",
+}, 901, 5, lookup)
+is("shift/replacement: an in-place update is shifted too",
+  shiftedReplacement.summary, "claude needs attention: shokupan · 4")
+is("shift/replacement: and keeps the original popup identity",
+  shiftedReplacement.originalId, 901)
+
+// ---------------------------------------------------------
 // The replaces_id path
 // ---------------------------------------------------------
 
@@ -200,6 +379,11 @@ isDeep("passthrough: every other role survives the change", snap, {
 const roles = L.popupRoles()
 is("passthrough: app is still a popup role", roles.indexOf("app") >= 0, true)
 is("passthrough: appIcon is still a popup role", roles.indexOf("appIcon") >= 0, true)
+// Both slots the shift rewrites are popup roles, so a shifted row reaches the
+// live toast and not only the history file. The history row and jankeesvw's
+// panel read the persisted file, which is written from this same object.
+is("passthrough: summary is still a popup role", roles.indexOf("summary") >= 0, true)
+is("passthrough: body is still a popup role", roles.indexOf("body") >= 0, true)
 
 console.log(`\n1..${tests}`)
 if (failures) {
