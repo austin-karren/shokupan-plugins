@@ -22,6 +22,7 @@
 // to register. Plugin hot-reload differs from the old bar/modules mechanism.
 
 import QtQuick
+import qs.Commons
 import qs.Ui
 
 Item {
@@ -31,11 +32,21 @@ Item {
   property string moduleName
   property var settings
 
-  implicitWidth: btn.implicitWidth
+  // Optional trailing air, set per layout in shell.json as
+  //   {"id": "shokupan.omenu", "trailingGap": 8}
+  // and scaled with the rest of the bar's spacing. It exists because the
+  // button's own margin is symmetric while what flanks it is not: the bar's
+  // edge padding on the left, the workspace switcher's focused-pill on the
+  // right — so equal pixels read as unequal air. The gap sits on this Item,
+  // not the WidgetButton (which has no such property and would fail to load).
+  readonly property real trailingGap: Style.space(Number(settings && settings.trailingGap) || 0)
+
+  implicitWidth: btn.implicitWidth + trailingGap
   implicitHeight: bar ? bar.barSize : 26
 
   WidgetButton {
     id: btn
+    anchors.left: parent.left
     anchors.verticalCenter: parent.verticalCenter
     bar: root.bar
     text: "\uf011"
