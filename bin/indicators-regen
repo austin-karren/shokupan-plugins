@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# Rebuild bar/modules/indicators.qml as upstream's Indicators.qml plus
+# patches/indicators.patch. Run by shokupan's post-update hook after every
+# `omarchy update`, because the installed package copy is what moves.
+#
+# The result is built in a temp file and moved into place only when the patch
+# applies cleanly, so a failure leaves the last good copy running. It also
+# leaves a marker (and a desktop notification) so `loaf forks` reads red until
+# the patch is carried across. Idempotent: a clean run rewrites the same bytes
+# and clears the marker.
+#
+# Module files are read at startup only; the regenerated copy takes effect at
+# the next omarchy-restart-shell, which this script never runs.
+
+set -uo pipefail
+
+SELF=$(readlink -f "${BASH_SOURCE[0]}")
+PLUGINS_ROOT="${PLUGINS_ROOT:-$(dirname "$(dirname "$SELF")")}"
+UPSTREAM="${INDICATORS_UPSTREAM:-/usr/share/omarchy/shell/plugins/bar/widgets/Indicators.qml}"
+PATCH_FILE="$PLUGINS_ROOT/patches/indicators.patch"
+TARGET="$PLUGINS_ROOT/bar/modules/indicators.qml"
+MARKER="${INDICATORS_MARKER:-${XDG_STATE_HOME:-$HOME/.local/state}/shokupan/indicators-patch.failed}"
+
+fail() {
+  mkdir -p "$(dirname "$MARKER")"
+  printf '%s\n' "$1" >"$MARKER"
+  echo "indicators-regen: $1" >&2
+  notify-send -u critical "Indicators patch failed" "$1 — the bar keeps the last good indicators.qml" 2>/dev/null || true
+  exit 1
+}
+
+[[ -f $UPSTREAM ]] || fail "upstream $UPSTREAM is missing"
+[[ -f $PATCH_FILE ]] || fail "patch $PATCH_FILE is missing"
+
+tmp=$(mktemp "$TARGET.XXXXXX") || fail "cannot write beside $TARGET"
+trap 'rm -f "$tmp"' EXIT
+
+# --no-backup-if-mismatch and -s keep a failed run from littering .orig/.rej
+# next to the target; the patch is run against the temp output, not the target.
+if ! patch -s --no-backup-if-mismatch -r /dev/null -o "$tmp" "$UPSTREAM" "$PATCH_FILE" >/dev/null 2>&1; then
+  fail "patches/indicators.patch no longer applies to $UPSTREAM"
+fi
+
+chmod 644 "$tmp"
+mv "$tmp" "$TARGET"
+rm -f "$MARKER"
+echo "indicators-regen: $TARGET = upstream + patch"

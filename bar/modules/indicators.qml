@@ -1,16 +1,14 @@
-// Our fork of the indicators cluster (upstream: plugins/bar/widgets/Indicators.qml,
-// omarchy 4.0.0.r1744). Forked for exactly one reason: upstream loads its
-// indicator blocks solely from the package's indicators/ directory — there is
-// no user search path — so a user indicator (our zen-ratio toggle) could not
-// join the cluster. Before this fork, ratio.qml/ratio-on.qml faked membership
-// as a twin-module pair bolted around the cluster in shell.json, with its own
-// width animation that made it appear a beat after the real indicators.
+// Omarchy's indicators cluster (plugins/bar/widgets/Indicators.qml) with ONE
+// change, applied over the installed package by patches/indicators.patch: the
+// indicator loader resolves each indicator from OUR ../indicators/ directory
+// first and falls back to the package's on load error. Upstream loads blocks
+// solely from the package's indicators/ directory — there is no user search
+// path — so a user indicator (our zen-ratio toggle, Ratio.qml) could not join
+// the cluster. The six stock indicators still load from /usr/share and track
+// upstream; only Ratio.qml is ours.
 //
-// The fork is a single change: IndicatorLoader resolves each indicator from
-// OUR ../indicators/ directory first and falls back to the package's on load
-// error. The six stock indicators therefore still load from /usr/share and
-// track upstream updates; only Ratio.qml is ours. Everything else in this
-// file is upstream verbatim — diff against the package copy when updating.
+// GENERATED — do not edit. bin/indicators-regen rebuilds this file from the
+// package copy plus the patch after every `omarchy update`; edit the patch.
 //
 // NOTE: module FILES are read at startup only — adding or editing one needs
 // omarchy-restart-shell; only shell.json hot-reloads.
@@ -175,12 +173,12 @@ BarWidget {
 
   onIndicatorEntriesChanged: syncActiveIndicatorOrder()
 
-  implicitWidth: root.vertical
-    ? Math.max(activeVerticalBlock.implicitWidth, inactiveVerticalArea.implicitWidth)
-    : activeHorizontalBlock.implicitWidth + inactiveHorizontalArea.implicitWidth
-  implicitHeight: root.vertical
-    ? activeVerticalBlock.implicitHeight + inactiveVerticalArea.implicitHeight
-    : Math.max(activeHorizontalBlock.implicitHeight, inactiveHorizontalArea.implicitHeight)
+  // Only the tree for the current orientation exists (see orientationLoader
+  // below); its wrapper keeps the stock sizing expressions, so the root's
+  // implicit size still follows the blocks synchronously rather than waiting
+  // on a positioner's polish.
+  implicitWidth: orientationLoader.item ? orientationLoader.item.implicitWidth : 0
+  implicitHeight: orientationLoader.item ? orientationLoader.item.implicitHeight : 0
 
   IpcHandler {
     target: "omarchy.indicators"
@@ -201,89 +199,117 @@ BarWidget {
 
   Component.onCompleted: root.refreshRequested()
 
-  Row {
-    id: horizontalIndicators
+  // Instantiating both orientation trees and toggling `visible` doubled every
+  // indicator per bar (and every process an indicator spawns, once per
+  // monitor). Load only the tree that matches the bar orientation instead.
+  Loader {
+    id: orientationLoader
+    sourceComponent: root.vertical ? verticalIndicatorsTree : horizontalIndicatorsTree
+  }
 
-    visible: !root.vertical
-    spacing: 0
-
-    HoverHandler {
-      onHoveredChanged: root.setIndicatorAreaHovered(hovered)
-    }
+  Component {
+    id: horizontalIndicatorsTree
 
     Item {
-      id: inactiveHorizontalArea
-
-      implicitWidth: root.revealInactiveIndicators ? inactiveHorizontalBlock.implicitWidth : 0
-      implicitHeight: Math.max(inactiveHorizontalBlock.implicitHeight, root.barSize)
+      implicitWidth: activeHorizontalBlock.implicitWidth + inactiveHorizontalArea.implicitWidth
+      implicitHeight: Math.max(activeHorizontalBlock.implicitHeight, inactiveHorizontalArea.implicitHeight)
       width: implicitWidth
       height: implicitHeight
-      clip: true
 
-      IndicatorBlock {
-        id: inactiveHorizontalBlock
-        anchors.verticalCenter: parent.verticalCenter
-        indicatorsModule: root
-        indicatorEntries: root.indicatorEntries
-        indicatorBlock: "inactive"
-        horizontal: true
-        reportActiveState: !root.vertical
+      Row {
+        id: horizontalIndicators
+
+        spacing: 0
+
+        HoverHandler {
+          onHoveredChanged: root.setIndicatorAreaHovered(hovered)
+        }
+
+        Item {
+          id: inactiveHorizontalArea
+
+          implicitWidth: root.revealInactiveIndicators ? inactiveHorizontalBlock.implicitWidth : 0
+          implicitHeight: Math.max(inactiveHorizontalBlock.implicitHeight, root.barSize)
+          width: implicitWidth
+          height: implicitHeight
+          clip: true
+
+          IndicatorBlock {
+            id: inactiveHorizontalBlock
+            anchors.verticalCenter: parent.verticalCenter
+            indicatorsModule: root
+            indicatorEntries: root.indicatorEntries
+            indicatorBlock: "inactive"
+            horizontal: true
+            reportActiveState: !root.vertical
+          }
+
+          HoverHandler {
+            onHoveredChanged: root.setIndicatorAreaHovered(hovered)
+          }
+        }
+
+        ActiveIndicatorBlock {
+          id: activeHorizontalBlock
+          indicatorsModule: root
+          indicatorModel: activeIndicatorModel
+          horizontal: true
+          reportActiveState: !root.vertical
+        }
       }
-
-      HoverHandler {
-        onHoveredChanged: root.setIndicatorAreaHovered(hovered)
-      }
-    }
-
-    ActiveIndicatorBlock {
-      id: activeHorizontalBlock
-      indicatorsModule: root
-      indicatorModel: activeIndicatorModel
-      horizontal: true
-      reportActiveState: !root.vertical
     }
   }
 
-  Column {
-    id: verticalIndicators
-
-    visible: root.vertical
-    spacing: 0
-
-    HoverHandler {
-      onHoveredChanged: root.setIndicatorAreaHovered(hovered)
-    }
+  Component {
+    id: verticalIndicatorsTree
 
     Item {
-      id: inactiveVerticalArea
-
-      implicitWidth: Math.max(inactiveVerticalBlock.implicitWidth, root.barSize)
-      implicitHeight: root.revealInactiveIndicators ? inactiveVerticalBlock.implicitHeight : 0
+      implicitWidth: Math.max(activeVerticalBlock.implicitWidth, inactiveVerticalArea.implicitWidth)
+      implicitHeight: activeVerticalBlock.implicitHeight + inactiveVerticalArea.implicitHeight
       width: implicitWidth
       height: implicitHeight
-      clip: true
 
-      IndicatorBlock {
-        id: inactiveVerticalBlock
-        anchors.horizontalCenter: parent.horizontalCenter
-        indicatorsModule: root
-        indicatorEntries: root.indicatorEntries
-        indicatorBlock: "inactive"
-        horizontal: false
-        reportActiveState: root.vertical
+      Column {
+        id: verticalIndicators
+
+        spacing: 0
+
+        HoverHandler {
+          onHoveredChanged: root.setIndicatorAreaHovered(hovered)
+        }
+
+        Item {
+          id: inactiveVerticalArea
+
+          implicitWidth: Math.max(inactiveVerticalBlock.implicitWidth, root.barSize)
+          implicitHeight: root.revealInactiveIndicators ? inactiveVerticalBlock.implicitHeight : 0
+          width: implicitWidth
+          height: implicitHeight
+          clip: true
+
+          IndicatorBlock {
+            id: inactiveVerticalBlock
+            anchors.horizontalCenter: parent.horizontalCenter
+            indicatorsModule: root
+            indicatorEntries: root.indicatorEntries
+            indicatorBlock: "inactive"
+            horizontal: false
+            reportActiveState: root.vertical
+          }
+
+          HoverHandler {
+            onHoveredChanged: root.setIndicatorAreaHovered(hovered)
+          }
+        }
+
+        ActiveIndicatorBlock {
+          id: activeVerticalBlock
+          indicatorsModule: root
+          indicatorModel: activeIndicatorModel
+          horizontal: false
+          reportActiveState: root.vertical
+        }
       }
-
-      HoverHandler {
-        onHoveredChanged: root.setIndicatorAreaHovered(hovered)
-      }
-    }
-
-    ActiveIndicatorBlock {
-      id: activeVerticalBlock
-      indicatorsModule: root
-      indicatorModel: activeIndicatorModel
-      horizontal: false
-      reportActiveState: root.vertical
     }
   }
 
@@ -444,7 +470,7 @@ BarWidget {
     onReportActiveStateChanged: syncActiveState()
     onBarRefChanged: injectProps()
 
-    // The fork: our ../indicators/ first, package's on load error. A missing
+    // The patch: our ../indicators/ first, package's on load error. A missing
     // local file is the normal case for the six stock indicators, so the
     // first Loader.Error is the fallback trigger, not a failure.
     property bool packageFallback: false

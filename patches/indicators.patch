@@ -1,0 +1,54 @@
+--- a/Indicators.qml
++++ b/Indicators.qml
+@@ -1,3 +1,18 @@
++// Omarchy's indicators cluster (plugins/bar/widgets/Indicators.qml) with ONE
++// change, applied over the installed package by patches/indicators.patch: the
++// indicator loader resolves each indicator from OUR ../indicators/ directory
++// first and falls back to the package's on load error. Upstream loads blocks
++// solely from the package's indicators/ directory — there is no user search
++// path — so a user indicator (our zen-ratio toggle, Ratio.qml) could not join
++// the cluster. The six stock indicators still load from /usr/share and track
++// upstream; only Ratio.qml is ours.
++//
++// GENERATED — do not edit. bin/indicators-regen rebuilds this file from the
++// package copy plus the patch after every `omarchy update`; edit the patch.
++//
++// NOTE: module FILES are read at startup only — adding or editing one needs
++// omarchy-restart-shell; only shell.json hot-reloads.
++
+ import QtQuick
+ import Quickshell
+ import Quickshell.Io
+@@ -455,16 +470,30 @@
+     onReportActiveStateChanged: syncActiveState()
+     onBarRefChanged: injectProps()
+ 
++    // The patch: our ../indicators/ first, package's on load error. A missing
++    // local file is the normal case for the six stock indicators, so the
++    // first Loader.Error is the fallback trigger, not a failure.
++    property bool packageFallback: false
++    onIndicatorIdChanged: packageFallback = false
++
+     Loader {
+       id: indicatorSource
+ 
+       anchors.fill: parent
+-      source: indicatorSlot.indicatorId ? Qt.resolvedUrl("../indicators/" + indicatorSlot.indicatorId + ".qml") : ""
++      source: indicatorSlot.indicatorId
++        ? (indicatorSlot.packageFallback
++            ? "file:///usr/share/omarchy/shell/plugins/bar/indicators/" + indicatorSlot.indicatorId + ".qml"
++            : Qt.resolvedUrl("../indicators/" + indicatorSlot.indicatorId + ".qml"))
++        : ""
+       onLoaded: {
+         indicatorSlot.injectProps()
+         indicatorSlot.syncActiveState()
+       }
+-      onStatusChanged: if (status === Loader.Error) console.warn("Indicator loader error", indicatorSlot.indicatorId, source)
++      onStatusChanged: {
++        if (status !== Loader.Error) return
++        if (!indicatorSlot.packageFallback) indicatorSlot.packageFallback = true
++        else console.warn("Indicator loader error", indicatorSlot.indicatorId, source)
++      }
+     }
+ 
+     Connections {

@@ -218,3 +218,18 @@ is therefore deliberate, not incidental. The underlying cause is that
 currently installed; it also still points `OMARCHY_PATH` at
 `~/.local/share/omarchy`, which no longer exists, so it needs rework before it
 can be restored.
+
+## Addendum (2026-10-20): the indicators fork became a patch
+
+`bar/modules/indicators.qml` is no longer a copy that drifts. Upstream 4.0.6
+rewrote the cluster (one orientation tree instead of two, which is what stopped
+every indicator being instantiated twice per bar), and carrying the fork across
+that meant re-diffing the whole file. Only the loader change was ever ours, so
+it is now `patches/indicators.patch` against the installed
+`plugins/bar/widgets/Indicators.qml`, and `bin/indicators-regen` writes
+upstream + patch into `bar/modules/indicators.qml` after every `omarchy update`
+(shokupan's `post-update.d/15-indicators-regen` hook). A patch that stops
+applying keeps the last good copy, notifies and leaves a marker; `loaf forks`
+records `patch` for this entry instead of a hash and goes red on a failed apply
+or a generated file that differs from upstream + patch. The generated file is
+still committed, so a checkout works without running the script.

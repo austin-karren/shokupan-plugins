@@ -20,7 +20,7 @@ Verified against **Omarchy 4.0.0.r1744** (quattro).
 | `plugins/austinkarren.clock` | Clone of upstream's clock panel where day cells and the hero date open GNOME Calendar on the clicked day, and a second click closes it |
 | `plugins/austinkarren.network` | Clone of upstream's network panel showing a globe for wired instead of an RJ45 socket |
 | `plugins/austinkarren.notifications` | Clone of upstream's notification service that recovers an app's name and icon from the `desktop-entry` hint when the sender sent no `app_name` — the blank slot Ghostty and every sandboxed app land in |
-| `bar/` | The indicators fork, which adds a user indicator (the zen aspect-ratio toggle) to a cluster upstream loads only from its own directory |
+| `bar/`, `patches/` | The indicators cluster, generated as upstream plus `patches/indicators.patch` by `bin/indicators-regen`, which adds a user indicator (the zen aspect-ratio toggle) to a cluster upstream loads only from its own directory |
 | `themes/tokyo-night/shell.bar.toml` | Pins the bar near-black under Tokyo Night so it reads as system chrome. A `[bar]` section override, the same mechanism stock tokyo-night uses for `shell.lock.toml` |
 | `bin/` | The scripts the plugins shell out to. They are not optional: `austinkarren.clock` calls `calendar-toggle` and `clock-click`, and the Ratio indicator calls `ratio-toggle` |
 | `test/` | The two suites for `austinkarren.notifications`' fallback: the logic under node, and the desktop-entry resolver against the real desktop database |
@@ -63,8 +63,9 @@ edits are small and marked in-file:
   centre widget (`shell/plugins/notifications/BarWidget.qml`, 412 lines) as it
   stood before `fc4caf3c` removed it, plus four null guards
 - `retired/shokupan-notifications/NotificationLogic.js` (retired) — same revision, five lines changed
-- `bar/modules/indicators.qml` — upstream's 471-line indicators cluster plus the
-  ~14-line user-directory search path this fork exists for
+- `bar/modules/indicators.qml` — generated, not carried: upstream's indicators
+  cluster plus `patches/indicators.patch`, the ~14-line user-directory search
+  path it exists for (ADR-0013 addendum)
 - `plugins/shokupan-omenu/BarWidget.qml` — adapted from upstream's menu bar widget;
   the button structure and both click actions are upstream's, the glyph and root are not
 - `themes/tokyo-night/shell.bar.toml` — the `[bar]` section shape, its non-colour
