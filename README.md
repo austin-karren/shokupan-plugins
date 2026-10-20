@@ -18,7 +18,6 @@ Verified against **Omarchy 4.0.0.r1744** (quattro).
 | `plugins/shokupan-capture` | The same three clicks on the native `omarchy-capture-*` tools. Marked DORMANT — kept as the drop-in swap when the native flow matures |
 | `plugins/shokupan-dpms-guard` | Keeps the display off while locked, for monitors whose USB-C deep sleep hotplugs the connector and wakes the output |
 | `plugins/austinkarren.clock` | Clone of upstream's clock panel where day cells and the hero date open GNOME Calendar on the clicked day, and a second click closes it |
-| `plugins/austinkarren.network` | Clone of upstream's network panel showing a globe for wired instead of an RJ45 socket |
 | `plugins/austinkarren.notifications` | Clone of upstream's notification service that recovers an app's name and icon from the `desktop-entry` hint when the sender sent no `app_name` — the blank slot Ghostty and every sandboxed app land in |
 | `bar/`, `patches/` | The indicators cluster, generated as upstream plus `patches/indicators.patch` by `bin/indicators-regen`, which adds a user indicator (the zen aspect-ratio toggle) to a cluster upstream loads only from its own directory |
 | `themes/tokyo-night/shell.bar.toml` | Pins the bar near-black under Tokyo Night so it reads as system chrome. A `[bar]` section override, the same mechanism stock tokyo-night uses for `shell.lock.toml` |
@@ -50,7 +49,6 @@ short:
 **Upstream Omarchy's, carried verbatim** (byte-identical to the installed
 package at 4.0.0.r1744):
 
-- `plugins/austinkarren.network/Panel.qml` — 1,958 lines, unchanged
 - `plugins/austinkarren.clock/Model.js` — 296 lines, unchanged
 
 **Upstream Omarchy's, patched here.** The bulk of each is upstream's; the
@@ -58,7 +56,6 @@ edits are small and marked in-file:
 
 - `plugins/austinkarren.clock/Panel.qml` — calendar-opening date cells (ADR-0006)
 - `plugins/austinkarren.clock/BarWidget.qml` — one branch, the dialog-aware left click
-- `plugins/austinkarren.network/Model.js` — one line, the wired globe glyph (ADR-0029)
 - `retired/shokupan-notifications/Notifications.qml` (retired) — upstream's own notification
   centre widget (`shell/plugins/notifications/BarWidget.qml`, 412 lines) as it
   stood before `fc4caf3c` removed it, plus four null guards

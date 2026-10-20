@@ -489,3 +489,14 @@ is tuned for. Cloning the monitor panel to paint a non-preset value was also
 rejected — a second clone for a cosmetic highlight fails the durability bar.
 The fix belongs upstream (show the current scale even when it is off-preset),
 drafted in `docs/upstream/` per ADR-0044 rule 5.
+
+## Addendum (2026-10-20): the wired globe is retired
+
+Deviation 2 above, `austinkarren.network` replacing `omarchy.network`, is
+withdrawn. The bar entry and panel are back on `omarchy.network`, and the wired
+state shows upstream's RJ45 socket again. The clone is deleted, along with its
+`packages/forks` line, its `packages/plugins` row and its marketplace
+submission. The globe was a one-glyph preference carried as a whole-file copy of
+a 371-line model and a 1,958-line panel; staying current with upstream is worth
+more than the glyph. It returns only if upstream offers an icon setting, which
+`docs/upstream/` argues for. The history above stands as written.
