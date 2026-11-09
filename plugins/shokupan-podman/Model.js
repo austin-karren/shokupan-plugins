@@ -51,7 +51,7 @@ function stateRules(state) {
 }
 
 var GLYPH = {
-  podman: "\ue866",
+  podman: "\uDB80\uDDA6",
   windows: "󰍲",
   macos: "󰀵",
   connect: "󰢹",
