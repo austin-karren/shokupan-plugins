@@ -1,273 +1,106 @@
 #!/bin/bash
 
-# Helper for the io.github.dicemans.docker-vms Omarchy shell plugin.
+# Helper for the shokupan.podman bar widget. Ported from the docker helper of
+# io.github.dicemans.docker-vms (MIT, Paolo Pellicori) to rootless podman.
 #
-# The QML panel stays presentational: every docker call, port lookup, and
-# client launch lives here so it can be read, tested, and fixed from a
-# terminal without touching the shell.
+# The QML panel stays presentational: every podman call and client launch
+# lives here so it can be read and fixed from a terminal. Parsing does NOT
+# live here any more: `list` and `stats` hand podman's own JSON to Model.js,
+# which is where it is tested (test/podman-model-test.mjs).
 #
-#   docker-vm-ctl list [name-filter]   TSV, one line per container
-#   docker-vm-ctl start|restart <name>
-#   docker-vm-ctl stop <name> [timeout-seconds]
-#   docker-vm-ctl remove <name>        delete a container docker will let go
-#   docker-vm-ctl connect <name>       RDP session (same as: omarchy-windows-vm launch -k)
-#   docker-vm-ctl viewer <name>        web/VNC viewer in the default browser
+#   podman-ctl list                    podman ps -a JSON, bounded
+#   podman-ctl stats                   podman stats JSON, bounded
+#   podman-ctl start|restart|pause|unpause|kill <name>
+#   podman-ctl stop <name> [timeout-seconds]
+#   podman-ctl remove <name>           delete a container podman will let go
+#   podman-ctl logs|shell <name>       terminal on the container
+#   podman-ctl open <name> <host-port> browser on a published port
+#   podman-ctl connect <name> [timeout] RDP session (dockur Windows VMs)
+#   podman-ctl viewer <name>           web/VNC viewer in the default browser
 #
-# `list` is the only chatty command; everything else prints a short reason on
-# failure and exits non-zero, which is what the panel surfaces as a row error.
+# Rootless podman has no daemon and no socket permission to fix, so the
+# docker plugin's polkit `daemon-start` path is gone: the CLI either runs or
+# is not installed.
 
 set -uo pipefail
 
-# Container ports the dockur images publish. RDP is the interactive session,
-# 8006 is the noVNC web viewer QEMU exposes over a websocket.
 RDP_CONTAINER_PORT=3389
 WEB_CONTAINER_PORT=8006
-
-# dockur's own defaults, used when a container declares neither.
 DEFAULT_USER="docker"
 DEFAULT_PASS="admin"
-
-# Seconds docker waits for a graceful shutdown before SIGKILL, and seconds we
-# wait for a guest to answer on RDP. Both are overridable per call because the
-# right value is a property of the workload: a Windows VM needs far longer to
-# flush its disk than a web server needs to close its sockets.
 DEFAULT_STOP_TIMEOUT=60
 DEFAULT_RDP_TIMEOUT=120
+REMOVABLE_STATES="created exited stopped configured dead"
 
-# States docker will actually let us act on. Asking docker to start a paused
-# container, or to remove one that is still running, fails — offering those
-# actions at all was the bug this table removes.
-REMOVABLE_STATES="created exited dead"
-
-# Hard caps on everything read from docker. A host with thousands of
-# containers, or a container whose name is a megabyte long, must not be able
-# to grow this script's memory — or the shell's, which keeps whatever we print
-# alive in a long-running process. Every producer below is bounded while it is
-# read rather than trimmed afterwards.
-MAX_ROWS=200        # containers listed
-MAX_BYTES=262144    # bytes accepted from any single docker invocation
-MAX_FIELD=512       # characters kept per field
-MAX_DIAG=400        # characters of diagnostic text ever printed
-
-# Field separator used to read docker's output. NOT a tab: tab counts as IFS
-# whitespace, so bash collapses runs of them and one empty field silently
-# shifts every field after it. 0x1F is not whitespace, so empty fields survive.
-FS=$'\x1f'
-
-# Truncate one field to MAX_FIELD and strip anything that would break either
-# the read separator or the TSV contract the panel parses.
-clip() {
-  local value="${1//[$'\t\n\r\x1f']/ }"
-  printf '%s' "${value:0:MAX_FIELD}"
-}
+# Bytes accepted from one podman invocation. JSON cannot be cut mid-stream and
+# still parse, so an oversized listing is refused with a code rather than
+# truncated into something Model.js would reject anyway.
+MAX_BYTES=1048576
+MAX_DIAG=400
+MAX_FIELD=512
 
 die() {
-  local reason="${1:0:MAX_DIAG}"
-  echo "$reason" >&2
+  echo "${1:0:MAX_DIAG}" >&2
   exit 1
 }
 
-# A non-fatal notice. stdout still carries a valid, if partial, list; the
-# panel shows this as a footnote rather than an error.
-notice() {
-  echo "${1:0:MAX_DIAG}" >&2
+require_podman() {
+  command -v podman >/dev/null 2>&1 || die "podman-missing"
 }
 
-require_docker() {
-  command -v docker >/dev/null 2>&1 || die "docker-missing"
+# Run a JSON producer under a byte budget. One byte over the cap is read so
+# "exactly at the cap" and "over it" are distinguishable.
+bounded_json() {
+  local out rc
+  out=$("$@" 2>/dev/null | head -c $((MAX_BYTES + 1)); exit "${PIPESTATUS[0]}")
+  rc=$?
+  # Checked before the exit status: an over-cap producer dies of SIGPIPE.
+  ((${#out} > MAX_BYTES)) && die "list-too-large"
+  if ((rc != 0)); then
+    local err
+    err=$("$@" 2>&1 >/dev/null | head -1)
+    die "${err:-podman-failed}"
+  fi
+  printf '%s\n' "$out"
 }
-
-# The daemon being down and the socket refusing this user look identical from
-# `docker ps` — both are one failed connection. They need different words and
-# different fixes: the play button can start a stopped daemon, but it cannot
-# put the user in the docker group.
-docker_permission_denied() {
-  # Not a pipe into grep: this script runs under pipefail, and `docker
-  # version` exits non-zero exactly when it prints this error, which made the
-  # pipeline "fail" even as grep matched.
-  local out
-  out=$(docker version 2>&1)
-  [[ ${out,,} == *"permission denied"* ]]
-}
-
-diagnose_unreachable() {
-  docker_permission_denied && die "docker-permission"
-  die "daemon-unreachable"
-}
-
-# Between the fix button's `usermod -aG docker` and the user's next login
-# there is a window where /etc/group grants the docker group but no process
-# has it yet. The socket ACL papers over that for docker itself, but not for
-# anything that checks group membership on files — omarchy-windows-vm keeps
-# its compose root:docker 0640, so a VM launch in that window died on a file
-# read. `newgrp` closes the window: it applies a membership the system
-# already records — no elevation, no password for a member — so the helper
-# re-runs itself under the group once and everything it spawns inherits it.
-# After the next real login the group is simply present and this is a no-op.
-adopt_docker_group() {
-  [[ ${DOCKER_VM_CTL_SG:-} == 1 ]] && return 0
-  command -v newgrp >/dev/null 2>&1 || return 0
-  id -nG | tr ' ' '\n' | grep -qx docker && return 0
-  local me
-  me=$(id -un)
-  # `id -nG <user>` reads the user database, not this process: it sees what
-  # usermod wrote, which is exactly the gap being bridged.
-  id -nG "$me" 2>/dev/null | tr ' ' '\n' | grep -qx docker || return 0
-  # newgrp execs the login shell with the group applied; handing it a single
-  # `exec` line on stdin turns that shell into this script re-run with the
-  # membership in place, stdout and stderr untouched. Not `| exec newgrp`:
-  # exec inside a pipeline replaces only the pipeline's subshell, and the
-  # script would carry on groupless behind the re-run's back. The guard
-  # above stops a loop if the adoption cannot take.
-  export DOCKER_VM_CTL_SG=1
-  printf 'exec %s\n' "$(printf '%q ' "$0" "$@")" | newgrp docker
-  exit $?
-}
-
-# The one place that decides whether a container is a desktop VM worth
-# offering a session button for. Image name is the honest signal: the dockur
-# images are named for their guest, and anything else is a plain container.
-kind_for() {
-  local image="${1,,}"
-  case "$image" in
-    *windows*) echo "windows" ;;
-    *macos*) echo "macos" ;;
-    *) echo "container" ;;
-  esac
-}
-
-# Go-template fragment that resolves one container port to its host port.
-#
-# HostConfig.PortBindings is asked first because it is what the container was
-# created with and survives a stop — docker's `ps` Ports column and
-# NetworkSettings.Ports are both empty while a container is down, which would
-# hide the connect button on exactly the VMs the user wants to start.
-# NetworkSettings is the fallback for `-P`, where the host port is assigned at
-# run time and HostConfig carries an empty HostPort.
-port_template() {
-  local port="$1" fallback
-  fallback='{{if $.NetworkSettings.Ports}}{{with index $.NetworkSettings.Ports "'"$port"'/tcp"}}{{(index . 0).HostPort}}{{else}}0{{end}}{{else}}0{{end}}'
-  printf '%s' '{{if $.HostConfig.PortBindings}}{{with index $.HostConfig.PortBindings "'"$port"'/tcp"}}{{(index . 0).HostPort}}{{else}}'"$fallback"'{{end}}{{else}}'"$fallback"'{{end}}'
-}
-
-# Host port for one container port, or 0. Used by connect/viewer, which act on
-# a single container and can afford their own inspect.
-bound_port() {
-  local name="$1" port="$2" value
-  value=$(docker inspect --format "$(port_template "$port")" "$name" 2>/dev/null)
-  echo "${value:-0}"
-}
-
-# Rank for list ordering: VMs first, plain containers after, each group
-# alphabetical. A stable order keeps the panel's keyboard cursor from jumping
-# between refreshes.
-kind_rank() {
-  case "$1" in
-    windows) echo 0 ;;
-    macos) echo 1 ;;
-    *) echo 2 ;;
-  esac
-}
-
-# Read a docker producer under a hard budget. `head` bounds it from the
-# consumer side: once the cap is reached the pipe closes and docker is stopped
-# by SIGPIPE, so the full output is never materialized anywhere. The producer's
-# own exit status is preserved through PIPESTATUS so a dead daemon is still
-# distinguishable from an empty result.
-bounded() {
-  local rows="$1"; shift
-  "$@" 2>/dev/null | head -c "$MAX_BYTES" | head -n "$rows"
-  return "${PIPESTATUS[0]}"
-}
-
-# Everything the panel wants from one inspect, in one template. Each piece is
-# guarded: a container without a healthcheck, without port bindings or without
-# mounts must render an empty field, not blow the template up.
-#
-# Health is reached with `index` rather than `.State.Health`, which docker's
-# formatter rejects outright ("map has no entry for key") on a container that
-# declares no healthcheck — most of them.
-DETAIL_TEMPLATE='{{with index .State "Health"}}{{.Status}}{{end}}{{"\x1f"}}{{.RestartCount}}{{"\x1f"}}{{if .HostConfig.PortBindings}}{{range $p, $b := .HostConfig.PortBindings}}{{if $b}}{{(index $b 0).HostPort}}>{{$p}} {{end}}{{end}}{{end}}{{"\x1f"}}{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}}|{{end}}{{end}}'
 
 cmd_list() {
-  require_docker
-  local filter="${1:-}"
+  require_podman
+  bounded_json podman ps -a --format json
+}
 
-  local meta
-  # One extra row is requested so hitting the cap is detectable without a
-  # second, unbounded count.
-  meta=$(bounded $((MAX_ROWS + 1)) docker ps -a --format \
-    '{{.Names}}{{"\x1f"}}{{.Image}}{{"\x1f"}}{{.State}}{{"\x1f"}}{{.Status}}{{"\x1f"}}{{.Label "com.docker.compose.project"}}{{"\x1f"}}{{.RunningFor}}') \
-    || diagnose_unreachable
-  [[ -n $meta ]] || return 0
-
-  local truncated=0
-  if (( $(printf '%s\n' "$meta" | wc -l) > MAX_ROWS )); then
-    truncated=1
-    meta=$(printf '%s\n' "$meta" | head -n "$MAX_ROWS")
-  fi
-
-  # One inspect for every container, so port lookup costs a single call no
-  # matter how many rows the panel shows — bounded the same way.
-  local ids ports_raw
-  ids=$(bounded "$MAX_ROWS" docker ps -aq)
-  declare -A rdp_of web_of health_of restarts_of ports_of bind_of
-  if [[ -n $ids ]]; then
-    ports_raw=$(bounded "$MAX_ROWS" docker inspect \
-      --format "{{.Name}}{{\"\x1f\"}}$(port_template "$RDP_CONTAINER_PORT"){{\"\x1f\"}}$(port_template "$WEB_CONTAINER_PORT"){{\"\x1f\"}}$DETAIL_TEMPLATE" \
-      $ids)
-    local pname prdp pweb phealth prestarts pports pbind key
-    while IFS="$FS" read -r pname prdp pweb phealth prestarts pports pbind; do
-      [[ -n $pname && -n $prdp ]] || continue
-      key="${pname#/}"; key="${key:0:MAX_FIELD}"
-      rdp_of["$key"]="${prdp:0:16}"
-      web_of["$key"]="${pweb:0:16}"
-      health_of["$key"]="${phealth:0:16}"
-      restarts_of["$key"]="${prestarts:0:8}"
-      ports_of["$key"]="${pports:0:MAX_FIELD}"
-      bind_of["$key"]="${pbind:0:MAX_FIELD}"
-    done <<<"$ports_raw"
-  fi
-
-  local name image state status project age kind key
-  while IFS="$FS" read -r name image state status project age; do
-    # A byte-capped read can end mid-line; a row without its leading fields is
-    # dropped rather than guessed at.
-    [[ -n $name && -n $image && -n $state ]] || continue
-    if [[ -n $filter && $name != *"$filter"* ]]; then continue; fi
-    kind=$(kind_for "$image")
-    key="${name:0:MAX_FIELD}"
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$(kind_rank "$kind")" "$(clip "$name")" "$(clip "$image")" "$(clip "$state")" \
-      "$(clip "$status")" "$kind" \
-      "${rdp_of[$key]:-0}" "${web_of[$key]:-0}" \
-      "$(clip "$project")" "${health_of[$key]:-}" "${restarts_of[$key]:-0}" \
-      "$(clip "${ports_of[$key]:-}")" "$(clip "${bind_of[$key]:-}")"
-  done <<<"$meta" | sort -t$'\t' -k1,1n -k2,2 | cut -f2-
-
-  (( truncated == 0 )) || notice "list-truncated"
+# `podman stats --no-stream` samples twice a second apart, like docker's, so
+# it stays on its own slower timer in the panel.
+cmd_stats() {
+  require_podman
+  bounded_json podman stats --no-stream --format json
 }
 
 container_exists() {
-  docker inspect "$1" >/dev/null 2>&1
+  podman container exists "$1" 2>/dev/null
 }
 
 container_state() {
-  docker inspect --format '{{.State.Status}}' "$1" 2>/dev/null
+  podman inspect --format '{{.State.Status}}' "$1" 2>/dev/null
 }
 
-# Read one variable out of a container's environment, falling back to a
-# default. Values may contain '=', so only the first one splits the pair.
 container_env() {
   local name="$1" key="$2" fallback="$3" value
-  value=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$name" 2>/dev/null \
+  value=$(podman inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$name" 2>/dev/null \
     | sed -n "s/^${key}=//p" | head -1)
   echo "${value:-$fallback}"
 }
 
-# Detach GUI clients from the shell process. uwsm gives them their own
-# systemd scope, exactly as the Windows .desktop entry does; setsid is the
-# fallback for sessions without uwsm.
+# Host port for one container port, or 0. `podman port` prints
+# "0.0.0.0:3389" per binding; the first one wins.
+bound_port() {
+  local value
+  value=$(podman port "$1" "$2/tcp" 2>/dev/null | head -1)
+  value="${value##*:}"
+  [[ $value =~ ^[0-9]{1,5}$ ]] || value=0
+  echo "$value"
+}
+
 launch_detached() {
   if command -v uwsm-app >/dev/null 2>&1; then
     uwsm-app -- "$@" >/dev/null 2>&1 &
@@ -277,12 +110,8 @@ launch_detached() {
   disown 2>/dev/null
 }
 
-# Run a docker command and, when it fails, surface docker's own first line
-# instead of a generic code. docker almost always says exactly what went wrong
-# — "port is already allocated", "no such image", "device or resource busy" —
-# and swallowing that was turning every failure into an unactionable
-# "Could not start the container".
-docker_do() {
+# Surface podman's own first error line instead of a generic code.
+podman_do() {
   local fallback="$1"
   shift
   local err
@@ -293,72 +122,47 @@ docker_do() {
   die "${err:-$fallback}"
 }
 
+need_container() {
+  require_podman
+  [[ -n ${1:-} ]] || die "no-container"
+  container_exists "$1" || die "no-such-container"
+}
+
 cmd_lifecycle() {
   local action="$1" name="$2" timeout="${3:-}"
-  require_docker
-  [[ -n $name ]] || die "no-container"
-  container_exists "$name" || die "no-such-container"
-
+  need_container "$name"
   if [[ $action == "stop" ]]; then
-    # Without -t docker allows 10 seconds and then SIGKILLs. That is a hard
-    # power cut for a Windows VM mid-flush, so the caller sets the budget.
     [[ $timeout =~ ^[0-9]+$ ]] || timeout=$DEFAULT_STOP_TIMEOUT
-    docker_do "stop-failed" docker stop -t "$timeout" "$name"
+    podman_do "stop-failed" podman stop -t "$timeout" "$name"
   else
-    docker_do "${action}-failed" docker "$action" "$name"
+    podman_do "${action}-failed" podman "$action" "$name"
   fi
 }
 
-# Wait for the guest to answer on RDP. A cold Windows VM needs ~20-40s, so the
-# ceiling is generous; each probe is cheap and the loop exits the moment the
-# port answers.
+# Only a stopped container, never `-f` or `-v`: volumes and the image stay.
+cmd_remove() {
+  local name="$1"
+  need_container "$name"
+  local state
+  state=$(container_state "$name")
+  [[ " $REMOVABLE_STATES " == *" $state "* ]] || die "not-removable:$state"
+  podman_do "remove-failed" podman rm "$name"
+}
+
 wait_for_rdp() {
   local port="$1" budget="${2:-$DEFAULT_RDP_TIMEOUT}" deadline
   deadline=$((SECONDS + budget))
   while ((SECONDS < deadline)); do
-    if timeout 2 bash -c "cat < /dev/null > /dev/tcp/127.0.0.1/$port" 2>/dev/null; then
-      return 0
-    fi
+    timeout 2 bash -c "cat < /dev/null > /dev/tcp/127.0.0.1/$port" 2>/dev/null && return 0
     sleep 2
   done
   return 1
 }
 
-# Deleting is the one action that cannot be undone from the panel, so it is
-# deliberately narrow: only a stopped container, and never `-f` or `-v`. The
-# image and any volume — including the bind mount holding a VM's disk — are
-# left exactly where they are, so the container can be recreated over them.
-cmd_remove() {
-  local name="$1"
-  require_docker
-  [[ -n $name ]] || die "no-container"
-  container_exists "$name" || die "no-such-container"
-  local state
-  state=$(container_state "$name")
-  if [[ " $REMOVABLE_STATES " != *" $state "* ]]; then
-    # A paused or restarting container reached this point under the old
-    # `!= running` test and then failed inside docker, after the destructive
-    # confirmation had already been shown.
-    die "not-removable:$state"
-  fi
-  docker_do "remove-failed" docker rm "$name"
-}
-
 cmd_connect() {
   local name="$1" rdp_timeout="${2:-}"
   [[ $rdp_timeout =~ ^[0-9]+$ ]] || rdp_timeout=$DEFAULT_RDP_TIMEOUT
-  require_docker
-  [[ -n $name ]] || die "no-container"
-  container_exists "$name" || die "no-such-container"
-
-  # Containers omarchy installed keep their own launcher, which already knows
-  # the compose file, the credentials, and the display scaling. -k matches the
-  # panel's contract: connecting must never stop the VM on disconnect.
-  if [[ $name == "omarchy-windows" ]] && command -v omarchy-windows-vm >/dev/null 2>&1; then
-    launch_detached omarchy-windows-vm launch -k
-    return 0
-  fi
-
+  need_container "$name"
   command -v xfreerdp3 >/dev/null 2>&1 || die "xfreerdp3-missing"
 
   local port
@@ -366,13 +170,12 @@ cmd_connect() {
   [[ $port != "0" ]] || die "no-rdp-port"
 
   if [[ $(container_state "$name") != "running" ]]; then
-    docker start "$name" >/dev/null 2>&1 || die "start-failed"
+    podman start "$name" >/dev/null 2>&1 || die "start-failed"
   fi
 
   local user pass
   user=$(container_env "$name" USERNAME "$DEFAULT_USER")
   pass=$(container_env "$name" PASSWORD "$DEFAULT_PASS")
-
   wait_for_rdp "$port" "$rdp_timeout" || { unset pass; die "rdp-timeout"; }
 
   local -a args=(
@@ -380,139 +183,56 @@ cmd_connect() {
     "/p:$pass"
     "/v:127.0.0.1:$port"
     "-grab-keyboard" "/sound" "/microphone" "/clipboard" "/cert:ignore"
-    "/title:$(clip "$name")"
+    "/title:${name:0:MAX_FIELD}"
     "/dynamic-resolution" "/gfx:AVC444"
     "/floatbar:sticky:off,default:visible,show:fullscreen"
   )
-
-  # The password must never reach the argument vector: /proc/<pid>/cmdline is
-  # world-readable, so `/p:secret` on the command line hands the credential to
-  # every other user on the machine. /args-from:stdin makes xfreerdp3 read its
-  # entire command line from the pipe below — one argument per line — leaving
-  # only the flag itself visible in the process list.
-  #
-  # This is also why the client is detached with setsid rather than uwsm here:
-  # uwsm hands the launch to a daemon, and the pipe would not reach the process
-  # that has to read from it.
+  # The password never reaches argv (/proc/<pid>/cmdline is world-readable):
+  # xfreerdp3 reads its whole command line from the pipe.
   printf '%s\n' "${args[@]}" | setsid xfreerdp3 /args-from:stdin >/dev/null 2>&1 &
   disown 2>/dev/null
-
-  # Drop the secret as soon as the pipe owns it. The array is cleared too: it
-  # holds the same string.
   unset pass args
 }
 
-# Put a working docker in front of this user. Everything else in this file
-# talks to a docker that already answers; this is the one command that needs
-# privileges. It runs from the shell process with no terminal attached, so the
-# elevation goes through polkit (pkexec), which asks graphically — sudo would
-# have nowhere to put its password prompt.
-#
-# Two different things can stand between the user and the socket — the daemon
-# is down, or the socket refuses them — and a fresh machine usually has both
-# at once. Whatever the mix, it is repaired in ONE pkexec call, so the user
-# authenticates once, not once per problem:
-#   - start docker.service when it is not running (`start`, never `enable`:
-#     the user asked for docker now, not at every boot);
-#   - when the user is not in the docker group, join it — the fix docker's
-#     own documentation prescribes — plus an ACL on the socket so access
-#     works in THIS session too, since group membership only lands at the
-#     next login. The ACL dies with the daemon; the group is what remains.
-cmd_daemon_start() {
-  require_docker
-  command -v systemctl >/dev/null 2>&1 || die "no-systemctl"
-  command -v pkexec >/dev/null 2>&1 || die "polkit-missing"
-
-  # Already answering — someone else won the race. Not an error.
-  docker info >/dev/null 2>&1 && return 0
-
-  local me
-  me=$(id -un)
-
-  local needs_start=0 needs_grant=0
-  systemctl is-active --quiet docker.service || needs_start=1
-  if docker_permission_denied || ! id -nG "$me" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
-    needs_grant=1
+open_url() {
+  if command -v omarchy-launch-browser >/dev/null 2>&1; then
+    launch_detached omarchy-launch-browser "$1"
+  else
+    launch_detached xdg-open "$1"
   fi
-
-  if ((needs_start == 1 || needs_grant == 1)); then
-    # The username travels as a positional argument, never interpolated into
-    # the script, so no name can ever be read as shell by root. pkexec's own
-    # stderr is dropped because the panel surfaces whatever this script
-    # prints, and the exit code already says what happened: 126 is a
-    # dismissed dialog, 127 a refused authorization — neither is a failure
-    # of docker, so they get their own words.
-    pkexec sh -c '
-      set -e
-      if [ "$1" = 1 ]; then systemctl start docker.service; fi
-      if [ "$2" = 1 ]; then
-        groupadd -f docker
-        usermod -aG docker "$3"
-        if [ -S /var/run/docker.sock ] && command -v setfacl >/dev/null 2>&1; then
-          setfacl -m "u:$3:rw" /var/run/docker.sock
-        fi
-      fi
-    ' fix "$needs_start" "$needs_grant" "$me" 2>/dev/null
-    local rc=$?
-    if ((rc == 126 || rc == 127)); then die "daemon-start-dismissed"; fi
-    ((rc == 0)) || die "daemon-start-failed"
-  fi
-
-  # systemctl returns when the unit is active, but dockerd needs a moment more
-  # before its socket answers. Without this wait the refresh that follows the
-  # click would repaint the very error the user just fixed.
-  local deadline=$((SECONDS + 30))
-  while ((SECONDS < deadline)); do
-    docker info >/dev/null 2>&1 && return 0
-    if docker_permission_denied; then
-      # The group is joined but the socket still refuses: the ACL half of
-      # the grant could not land (no setfacl, an unusual socket path), so
-      # what remains is the part only a new login applies. Waiting longer
-      # cannot change that — stop the clock and say so.
-      ((needs_grant == 1)) && die "daemon-grant-relogin"
-      die "docker-permission"
-    fi
-    sleep 1
-  done
-  die "daemon-start-timeout"
 }
 
-# CPU and memory. Kept out of `list` on purpose: measured on this machine,
-# `docker stats --no-stream` costs a flat ~2000 ms whether there are zero, one
-# or five containers — it waits for two samples a second apart to compute a
-# percentage — against ~60 ms for the whole of `list`. It is therefore its own
-# command, called on its own slower schedule and only when the user asks for it.
-cmd_stats() {
-  require_docker
-  bounded "$MAX_ROWS" docker stats --no-stream \
-    --format '{{.Name}}{{"\x1f"}}{{.CPUPerc}}{{"\x1f"}}{{.MemUsage}}{{"\x1f"}}{{.MemPerc}}' \
-    | while IFS="$FS" read -r sname scpu smem sperc; do
-        [[ -n $sname ]] || continue
-        printf '%s\t%s\t%s\t%s\n' "$(clip "$sname")" "$(clip "$scpu")" "$(clip "$smem")" "$(clip "$sperc")"
-      done
+cmd_viewer() {
+  local name="$1"
+  need_container "$name"
+  local port
+  port=$(bound_port "$name" "$WEB_CONTAINER_PORT")
+  [[ $port != "0" ]] || die "no-web-port"
+  if [[ $(container_state "$name") != "running" ]]; then
+    podman start "$name" >/dev/null 2>&1 || die "start-failed"
+  fi
+  open_url "http://127.0.0.1:$port"
 }
 
-# Open a terminal on the container. Both of these are the reason people leave
-# the panel for a shell, so they belong in it.
+cmd_open() {
+  local name="$1" port="$2"
+  [[ $port =~ ^[0-9]{1,5}$ ]] && ((port > 0 && port < 65536)) || die "bad-port"
+  need_container "$name"
+  [[ $(container_state "$name") == "running" ]] || die "container-not-running"
+  open_url "http://127.0.0.1:$port"
+}
+
+# The container name goes in as a positional argument, never interpolated,
+# so no name can be read as shell. Both windows stay open on failure long
+# enough to read why.
 cmd_terminal() {
   local what="$1" name="$2"
-  require_docker
-  [[ -n $name ]] || die "no-container"
-  container_exists "$name" || die "no-such-container"
+  need_container "$name"
   command -v omarchy-launch-terminal >/dev/null 2>&1 || die "no-terminal-launcher"
-
   case "$what" in
     logs)
-      # The window has to outlive the command. `docker logs -f` has nothing to
-      # follow on a stopped container, so it printed and exited, the terminal
-      # closed in the same instant, and the logs were unreadable exactly when
-      # they matter most — after something died. 130 means the user pressed
-      # Ctrl-C, and then closing immediately is what they asked for.
-      #
-      # The container name goes in as a positional argument rather than being
-      # interpolated into the script, so no name can ever be read as shell.
       launch_detached omarchy-launch-terminal -- bash -c '
-        docker logs -f --tail 200 "$1"
+        podman logs -f --tail 200 "$1"
         status=$?
         [ $status -eq 130 ] && exit 0
         printf "\n\n— end of logs — press any key to close —"
@@ -520,16 +240,8 @@ cmd_terminal() {
       ' _ "$name" ;;
     shell)
       [[ $(container_state "$name") == "running" ]] || die "container-not-running"
-      # bash is the nicer shell to land in, sh the only one every image is
-      # guaranteed to have. The choice must be a test, not a fallback: a failed
-      # `exec` terminates a non-interactive shell outright, so
-      # `exec bash || exec sh` never reaches its second branch and the terminal
-      # dies instantly on any image without bash — which is most of them.
-      # Same reasoning as the logs window, but only on failure: leaving a shell
-      # is meant to close it, while a `docker exec` that refused should stay on
-      # screen long enough to read why.
       launch_detached omarchy-launch-terminal -- bash -c '
-        docker exec -it "$1" sh -c "if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi"
+        podman exec -it "$1" sh -c "if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi"
         status=$?
         [ $status -eq 0 ] && exit 0
         printf "\n— the shell exited with status %s — press any key to close —" "$status"
@@ -539,84 +251,23 @@ cmd_terminal() {
   esac
 }
 
-# Open a published port in the browser. The port comes from the panel, which
-# read it from docker, but it is re-checked here rather than trusted.
-cmd_open() {
-  local name="$1" port="$2"
-  require_docker
-  [[ -n $name ]] || die "no-container"
-  [[ $port =~ ^[0-9]{1,5}$ ]] && ((port > 0 && port < 65536)) || die "bad-port"
-  # The panel already hides this on a stopped container, but the panel works
-  # from a list that is seconds old. Nothing is listening on a published port
-  # while the container is down, so refuse rather than open a dead tab.
-  container_exists "$name" || die "no-such-container"
-  [[ $(container_state "$name") == "running" ]] || die "container-not-running"
-  local url="http://127.0.0.1:$port"
-  if command -v omarchy-launch-browser >/dev/null 2>&1; then
-    launch_detached omarchy-launch-browser "$url"
-  else
-    launch_detached xdg-open "$url"
-  fi
-}
-
-# Open a bind-mounted host directory in the file manager — for a dockur VM this
-# is the folder shared with the guest.
-cmd_folder() {
-  local path="$1"
-  [[ -n $path ]] || die "no-folder"
-  [[ -d $path ]] || die "no-such-folder"
-  # Deliberately not omarchy-launch-nautilus: that command takes no arguments
-  # — it is hardcoded to `nautilus --new-window` — so the path was dropped in
-  # silence and the file manager opened on home instead of the shared folder.
-  # xdg-open both honours the user's chosen file manager and receives the path.
-  launch_detached xdg-open "$path"
-}
-
-cmd_viewer() {
-  local name="$1"
-  require_docker
-  [[ -n $name ]] || die "no-container"
-  container_exists "$name" || die "no-such-container"
-
-  local port
-  port=$(bound_port "$name" "$WEB_CONTAINER_PORT")
-  [[ $port != "0" ]] || die "no-web-port"
-
-  if [[ $(container_state "$name") != "running" ]]; then
-    docker start "$name" >/dev/null 2>&1 || die "start-failed"
-  fi
-
-  local url="http://127.0.0.1:$port"
-  if command -v omarchy-launch-browser >/dev/null 2>&1; then
-    launch_detached omarchy-launch-browser "$url"
-  else
-    launch_detached xdg-open "$url"
-  fi
-}
-
-adopt_docker_group "$@"
-
 case "${1:-}" in
-  list) cmd_list "${2:-}" ;;
+  list) cmd_list ;;
+  stats) cmd_stats ;;
   start | stop | restart | pause | unpause | kill) cmd_lifecycle "$1" "${2:-}" "${3:-}" ;;
   remove) cmd_remove "${2:-}" ;;
-  daemon-start) cmd_daemon_start ;;
-  stats) cmd_stats ;;
   logs | shell) cmd_terminal "$1" "${2:-}" ;;
   open) cmd_open "${2:-}" "${3:-}" ;;
-  folder) cmd_folder "${2:-}" ;;
   connect) cmd_connect "${2:-}" "${3:-}" ;;
   viewer) cmd_viewer "${2:-}" ;;
   *)
     cat >&2 <<'USAGE'
-usage: docker-vm-ctl list [filter]
-       docker-vm-ctl daemon-start
-       docker-vm-ctl stats
-       docker-vm-ctl start|restart|pause|unpause|kill|remove <name>
-       docker-vm-ctl stop <name> [timeout]
-       docker-vm-ctl connect <name> [timeout] | viewer <name>
-       docker-vm-ctl logs|shell <name>
-       docker-vm-ctl open <name> <host-port> | folder <path>
+usage: podman-ctl list | stats
+       podman-ctl start|restart|pause|unpause|kill|remove <name>
+       podman-ctl stop <name> [timeout]
+       podman-ctl connect <name> [timeout] | viewer <name>
+       podman-ctl logs|shell <name>
+       podman-ctl open <name> <host-port>
 USAGE
     exit 2
     ;;

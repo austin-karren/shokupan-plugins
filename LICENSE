@@ -73,6 +73,17 @@ localised, and are marked in-file where practical.
       comments are carried from upstream's default/themed/shell.toml.tpl.
       The pinned colours are original.
 
+Third-party work, with modifications by Austin Karren
+-----------------------------------------------------
+
+  plugins/shokupan-podman/
+      From io.github.dicemans.docker-vms by Paolo Pellicori
+      (https://github.com/dicemans/omarchy-plugin-docker-vms, 0a8dc74), MIT.
+      Ported from docker to rootless podman: the helper rewritten as
+      bin/podman-ctl, parsing moved into Model.js against podman's JSON, the
+      polkit daemon fix and the open-folder entry dropped. Its own MIT
+      notice is kept at plugins/shokupan-podman/LICENSE and applies to it.
+
 Original work by Austin Karren
 ------------------------------
 

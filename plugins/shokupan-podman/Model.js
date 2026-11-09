@@ -1,15 +1,13 @@
-// Pure helpers for the Docker VMs panel: parsing the helper's TSV, deciding
-// which actions a row offers, and turning docker's vocabulary into labels.
-// Kept free of QML types so the panel stays a thin renderer.
+// Pure helpers for the Podman panel: parsing podman's JSON, deciding which
+// actions a row offers, and turning podman's vocabulary into labels. Kept
+// free of QML types so the panel stays a thin renderer.
+//
+// Derived from io.github.dicemans.docker-vms (MIT, Paolo Pellicori); the
+// podman changes are marked SHOKUPAN:.
 
-// Caps mirroring bin/docker-vm-ctl. The helper already bounds every producer;
-// these bound what the shell process is willing to hold even if it is handed
-// something else — a replaced helper, a stray file, a partial read.
-// Fields the helper emits per row. A short row is a truncated read, not a
-// container: it is dropped rather than half-parsed.
-var FIELDS = 12
-
-var MAX_INPUT = 262144   // characters accepted from one helper run
+// Caps on what the shell process is willing to hold, whatever the helper
+// hands it.
+var MAX_INPUT = 1048576  // characters accepted from one helper run
 var MAX_ROWS = 200       // rows kept
 var MAX_FIELD = 512      // characters kept per field
 var MAX_DIAG = 400       // characters of diagnostic text kept
@@ -36,7 +34,12 @@ var STATES = {
   created:    { start: true,  stopRestart: false, remove: true,  active: false, pause: false, unpause: false, kill: false, shell: false },
   exited:     { start: true,  stopRestart: false, remove: true,  active: false, pause: false, unpause: false, kill: false, shell: false },
   dead:       { start: false, stopRestart: false, remove: true,  active: false, pause: false, unpause: false, kill: false, shell: false },
-  removing:   { start: false, stopRestart: false, remove: false, active: false, pause: false, unpause: false, kill: false, shell: false }
+  removing:   { start: false, stopRestart: false, remove: false, active: false, pause: false, unpause: false, kill: false, shell: false },
+  // SHOKUPAN: podman's own states. `stopped` is podman's exited-without-
+  // cleanup, `configured` is created-in-a-pod, `stopping` is mid-stop.
+  stopped:    { start: true,  stopRestart: false, remove: true,  active: false, pause: false, unpause: false, kill: false, shell: false },
+  configured: { start: true,  stopRestart: false, remove: true,  active: false, pause: false, unpause: false, kill: false, shell: false },
+  stopping:   { start: false, stopRestart: false, remove: false, active: true,  pause: false, unpause: false, kill: true,  shell: false }
 }
 
 // An unknown state offers nothing rather than guessing. A new docker state
@@ -48,7 +51,7 @@ function stateRules(state) {
 }
 
 var GLYPH = {
-  docker: "󰡨",
+  podman: "󰡨",
   windows: "󰍲",
   macos: "󰀵",
   connect: "󰢹",
@@ -64,50 +67,108 @@ var GLYPH = {
   play: "󰐊",
   kill: "󰚌",
   web: "󰖟",
-  folder: "󰉋",
   copy: "󰆏"
 }
 
-// One line per container:
-//   name \t image \t state \t status \t kind \t rdpPort \t webPort
-// Anything shorter is a truncated read and is dropped rather than guessed at.
-function parseList(raw) {
+// SHOKUPAN: podman port. The docker helper flattened docker's Go-template
+// output into TSV; podman's `ps -a --format json` is structured already, so
+// the helper hands it over raw and the parsing lives here, where node can
+// test it (test/podman-model-test.mjs).
+
+// Image name -> what kind of thing it is. dockur images are named for their
+// guest; anything else is a plain container.
+function kindFor(image) {
+  var text = String(image || "").toLowerCase()
+  if (text.indexOf("windows") !== -1) return "windows"
+  if (text.indexOf("macos") !== -1) return "macos"
+  return "container"
+}
+
+function kindRank(kind) {
+  return kind === "windows" ? 0 : kind === "macos" ? 1 : 2
+}
+
+function parseJsonArray(raw) {
+  var text = String(raw || "").slice(0, MAX_INPUT).trim()
+  if (!text) return []
+  try {
+    var data = JSON.parse(text)
+    return Array.isArray(data) ? data : null
+  } catch (e) {
+    return null
+  }
+}
+
+// podman ps Ports: [{host_port, container_port, protocol, range}]. A range
+// entry (`-p 8000-8002:8000-8002`) is one object with range > 1; only its
+// first port is listed, which is what docker's helper showed too.
+function hostPortFor(ports, containerPort) {
+  for (var i = 0; i < ports.length; i++)
+    if (ports[i].container === containerPort) return ports[i].host
+  return 0
+}
+
+function portsOf(list) {
+  var out = []
+  var seen = {}
+  if (!Array.isArray(list)) return out
+  for (var i = 0; i < list.length && out.length < 24; i++) {
+    var p = list[i] || {}
+    if (String(p.protocol || "tcp") !== "tcp") continue
+    var host = parseInt(p.host_port, 10) || 0
+    var container = parseInt(p.container_port, 10) || 0
+    if (host <= 0 || host > 65535 || seen[host]) continue
+    seen[host] = true
+    out.push({ host: host, container: container, proto: "tcp" })
+  }
+  return out
+}
+
+// `podman ps -a --format json` -> rows, VMs first then by name, so the
+// keyboard cursor does not jump between refreshes. Returns null when the
+// input is not a JSON array: a broken listing must read as an error, not as
+// "No containers". Pod infra containers are podman plumbing and are skipped.
+function parseList(raw, nameFilter) {
+  var data = parseJsonArray(raw)
+  if (data === null) return null
+  var filter = String(nameFilter || "")
   var rows = []
-  // Bound the input before it is split: a runaway producer must not be able to
-  // turn one refresh into an unbounded array of unbounded strings.
-  var lines = String(raw || "").slice(0, MAX_INPUT).split("\n")
-  for (var i = 0; i < lines.length && rows.length < MAX_ROWS; i++) {
-    if (!lines[i]) continue
-    var f = lines[i].split("\t")
-    if (f.length < FIELDS) continue
-    var kind = clip(f[4])
-    var state = clip(f[2])
-    var status = clip(f[3])
+  for (var i = 0; i < data.length && rows.length < MAX_ROWS; i++) {
+    var c = data[i]
+    if (!c || typeof c !== "object" || c.IsInfra) continue
+    var name = clip(Array.isArray(c.Names) ? c.Names[0] : c.Names)
+    var image = clip(c.Image)
+    var state = clip(c.State)
+    if (!name || !state) continue
+    if (filter && name.indexOf(filter) === -1) continue
+    var status = clip(c.Status)
+    var kind = kindFor(image)
+    var ports = portsOf(c.Ports)
+    var rdpPort = hostPortFor(ports, 3389)
+    var labels = c.Labels && typeof c.Labels === "object" ? c.Labels : {}
     rows.push({
-      name: clip(f[0]),
-      image: clip(f[1]),
+      name: name,
+      image: image,
       state: state,
       status: status,
       kind: kind,
-      rdpPort: parseInt(f[5], 10) || 0,
-      webPort: parseInt(f[6], 10) || 0,
-      project: clip(f[7]),
-      // docker reports health twice: structurally, and inside the status
-      // string. The structured field is authoritative; the string is the
-      // fallback for a docker that did not fill it in.
-      health: clip(f[8]) || healthOf(status),
-      restarts: parseInt(f[9], 10) || 0,
-      ports: parsePorts(f[10]),
-      binds: parseBinds(f[11]),
+      rdpPort: rdpPort,
+      webPort: hostPortFor(ports, 8006),
+      project: clip(labels["com.docker.compose.project"] || c.PodName || ""),
+      // podman puts the healthcheck verdict in the status string only.
+      health: healthOf(status),
+      restarts: parseInt(c.Restarts, 10) || 0,
+      ports: ports,
       running: state === "running",
       active: stateRules(state).active,
-      // The image name is a hint, not proof. A dockur image re-tagged
-      // `my-vm:latest` stops looking like a VM, and a plain container tagged
-      // `:windows-test` starts looking like one. A published RDP port is the
-      // honest signal, so it counts too.
-      isVm: kind === "windows" || kind === "macos" || (parseInt(f[5], 10) || 0) > 0
+      // A published RDP port is the honest VM signal; the image name a hint.
+      isVm: kind === "windows" || kind === "macos" || rdpPort > 0
     })
   }
+  rows.sort(function (a, b) {
+    var k = kindRank(a.kind) - kindRank(b.kind)
+    return k !== 0 ? k : (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+  })
   return rows
 }
 
@@ -138,44 +199,17 @@ function isWell(row) {
   return !!row && row.state === "running" && row.health !== "unhealthy"
 }
 
-// "8080>80/tcp 5432>5432/tcp" -> [{host, container, proto}]. Ports arrive from
-// HostConfig, so they survive a stop; udp duplicates of a tcp port are dropped
-// because they would show as a second identical-looking entry.
-function parsePorts(raw) {
-  var out = []
-  var seen = {}
-  var parts = String(raw || "").trim().split(/\s+/)
-  for (var i = 0; i < parts.length && out.length < 24; i++) {
-    var m = /^(\d{1,5})>(\d{1,5})\/(tcp|udp)$/.exec(parts[i])
-    if (!m) continue
-    if (m[3] !== "tcp") continue
-    if (seen[m[1]]) continue
-    seen[m[1]] = true
-    out.push({ host: parseInt(m[1], 10), container: parseInt(m[2], 10), proto: m[3] })
-  }
-  return out
-}
-
-function parseBinds(raw) {
-  var out = []
-  var parts = String(raw || "").split("|")
-  for (var i = 0; i < parts.length && out.length < 8; i++)
-    if (parts[i]) out.push(clip(parts[i]))
-  return out
-}
-
-// CPU and memory, keyed by container name. Only running containers appear —
-// docker stats says nothing about the others, and neither should the panel.
+// CPU and memory from `podman stats --no-stream --format json`, keyed by
+// container name. Only running containers appear.
 function parseStats(raw) {
   var byName = {}
-  var lines = String(raw || "").slice(0, MAX_INPUT).split("\n")
-  for (var i = 0; i < lines.length; i++) {
-    if (!lines[i]) continue
-    var f = lines[i].split("\t")
-    if (f.length < 4) continue
-    // "8.154GiB / 15.31GiB" -> the used half is the only interesting one here.
-    var used = clip(f[2]).split("/")[0].trim()
-    byName[clip(f[0])] = { cpu: clip(f[1]), mem: used, memPerc: clip(f[3]) }
+  var data = parseJsonArray(raw) || []
+  for (var i = 0; i < data.length && i < MAX_ROWS; i++) {
+    var s = data[i]
+    if (!s || typeof s !== "object" || !s.name) continue
+    // "671.7kB / 66.65GB" -> the used half is the only interesting one here.
+    var used = clip(s.mem_usage).split("/")[0].trim()
+    byName[clip(s.name)] = { cpu: clip(s.cpu_percent), mem: used, memPerc: clip(s.mem_percent) }
   }
   return byName
 }
@@ -186,10 +220,10 @@ function filterRows(rows, vmsOnly) {
 }
 
 function rowIcon(row) {
-  if (!row) return GLYPH.docker
+  if (!row) return GLYPH.podman
   if (row.kind === "windows") return GLYPH.windows
   if (row.kind === "macos") return GLYPH.macos
-  return GLYPH.docker
+  return GLYPH.podman
 }
 
 // The actions a row offers, in the order they are drawn. This list is also
@@ -265,12 +299,6 @@ function rowMenuActions(row) {
     var p = row.ports[i]
     if (p.host === row.rdpPort) continue
     items.push({ id: "open", icon: GLYPH.web, label: "Open 127.0.0.1:" + p.host, arg: String(p.host) })
-  }
-
-  for (var b = 0; b < row.binds.length && b < 3; b++) {
-    var path = row.binds[b]
-    var name = path.split("/").filter(function (x) { return x }).pop() || path
-    items.push({ id: "folder", icon: GLYPH.folder, label: "Open folder " + name, arg: path })
   }
 
   items.push({ id: "copyName", icon: GLYPH.copy, label: "Copy name", arg: row.name })
@@ -358,10 +386,9 @@ function summary(rows) {
 function errorText(code) {
   switch (String(code || "").trim()) {
     case "": return ""
-    case "docker-missing": return "Docker is not installed"
-    case "daemon-unreachable": return "Docker daemon is not running"
-    case "docker-permission": return "No permission on Docker's socket"
-    case "daemon-grant-relogin": return "Access granted — log out and back in to finish"
+    case "podman-missing": return "Podman is not installed"
+    case "podman-failed": return "podman ps failed"
+    case "list-unreadable": return "Could not read podman's container list"
     case "no-container": return "No container given"
     case "no-such-container": return "Container no longer exists"
     case "no-rdp-port": return "No RDP port published"
@@ -374,13 +401,7 @@ function errorText(code) {
     case "restart-failed": return "Could not restart the container"
     case "remove-failed": return "Could not remove the container"
     case "container-running": return "Stop the container before removing it"
-    // The daemon-start command speaks polkit as well as docker.
-    case "no-systemctl": return "systemctl is not available"
-    case "polkit-missing": return "pkexec is not installed"
-    case "daemon-start-dismissed": return "Authorization dismissed — nothing was changed"
-    case "daemon-start-failed": return "Could not start the Docker daemon"
-    case "daemon-start-timeout": return "Docker started but is not answering yet"
-    case "list-truncated": return "Showing the first " + MAX_ROWS + " containers"
+    case "list-too-large": return "podman's container list is too large to show"
     default:
       var text = String(code).trim()
       // The helper forwards docker's own first line for anything it cannot
@@ -390,7 +411,7 @@ function errorText(code) {
         if (state === "paused") return "Unpause the container before removing it"
         if (state === "restarting") return "The container is restarting — stop it first"
         if (state === "running") return "Stop the container before removing it"
-        return "Docker will not remove a container in state \"" + state + "\""
+        return "Podman will not remove a container in state \"" + state + "\""
       }
       return text
   }
@@ -413,8 +434,7 @@ if (typeof module !== "undefined") {
     GLYPH: GLYPH,
     parseList: parseList,
     parseStats: parseStats,
-    parsePorts: parsePorts,
-    parseBinds: parseBinds,
+    kindFor: kindFor,
     rowMenuActions: rowMenuActions,
     detailLine: detailLine,
     filterRows: filterRows,

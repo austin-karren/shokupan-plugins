@@ -6,17 +6,21 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Docker containers in the bar: power control for every container, plus a
+// Podman containers in the bar: power control for every container, plus a
 // desktop-session button for the dockur VM images.
 //
-// All docker work goes through bin/docker-vm-ctl. Keeping the shell out of
-// docker's output formats means a broken assumption about ports or images is
+// All podman work goes through bin/podman-ctl. Keeping the shell out of
+// podman's CLI means a broken assumption about ports or images is
 // fixed in a script you can run in a terminal, not in a QML file that only
 // misbehaves once the bar is up.
+//
+// Derived from io.github.dicemans.docker-vms (MIT, Paolo Pellicori). The
+// podman port dropped the polkit daemon-start fix (rootless podman has no
+// daemon) and the open-folder menu entry (podman ps reports no bind sources).
 Panel {
   id: root
-  moduleName: "io.github.dicemans.docker-vms"
-  ipcTarget: "io.github.dicemans.docker-vms"
+  moduleName: "shokupan.podman"
+  ipcTarget: "shokupan.podman"
   // manageIpc: false so this panel owns the single handler the target
   // permits — the base class only offers open/close/toggle, and the
   // container actions below are what make the plugin bindable to a key.
@@ -130,7 +134,7 @@ Panel {
   // The helper ships inside the plugin, so its path is derived from this
   // file's own location rather than assumed to be on PATH.
   readonly property string helperPath: {
-    var url = String(Qt.resolvedUrl("bin/docker-vm-ctl"))
+    var url = String(Qt.resolvedUrl("bin/podman-ctl"))
     return url.indexOf("file://") === 0 ? url.substring(7) : url
   }
 
@@ -138,19 +142,9 @@ Panel {
   readonly property int runningCount: Model.runningCount(root.visibleRows)
   readonly property int attentionCount: Model.attentionCount(root.visibleRows)
   // The bar must be able to say "something is wrong" without being opened:
-  // a dead daemon used to look exactly like an idle one.
+  // a failing podman used to look exactly like an idle one.
   readonly property bool barUrgent: root.listError !== "" || root.attentionCount > 0
   readonly property bool countInBar: root.showCount && root.runningCount > 0
-
-  // The listing failures the panel can fix itself. Everything else in
-  // errorText is a diagnosis; these get a button. A stopped daemon and a
-  // refused socket need different words but the same gesture: one click,
-  // one polkit authorization, and the helper repairs whatever mix of the
-  // two it finds.
-  readonly property bool daemonDown: root.listError === "daemon-unreachable"
-  readonly property bool accessDenied: root.listError === "docker-permission"
-  readonly property bool daemonFixable: root.daemonDown || root.accessDenied
-  property bool daemonBusy: false
 
   readonly property string stateMessage: {
     if (root.listError !== "") return Model.errorText(root.listError)
@@ -197,17 +191,24 @@ Panel {
   // the thing that grows the shell process.
   function applyListDiagnostic(text) {
     var code = Model.clipDiag(text)
-    if (code === "list-truncated") {
-      listNotice = code
-      listError = ""
-      return
-    }
-    listNotice = ""
+    // SHOKUPAN: stdout and stderr finish in either order. An empty stderr
+    // must not wipe the unreadable-JSON error applyList just set; the next
+    // good parse clears it.
+    if (code === "" && listError === "list-unreadable") return
     listError = code
   }
 
   function applyList(raw) {
-    rows = Model.parseList(raw)
+    // SHOKUPAN: parseList takes podman's JSON and the name filter, and
+    // returns null for input that is not a JSON array.
+    var parsed = Model.parseList(raw, root.nameFilter)
+    if (parsed === null) {
+      rows = []
+      listError = "list-unreadable"
+    } else {
+      rows = parsed
+      if (listError === "list-unreadable") listError = ""
+    }
     // A container can disappear under a pending question — removed from a
     // terminal, or by another panel — and the dialog must not outlive it.
     if (menuOpen && rows.length > 0) {
@@ -240,22 +241,7 @@ Panel {
     }
   }
 
-  // Starting the daemon leaves docker's remit — it goes through polkit, so
-  // the click may be answered by a password dialog rather than a result. Its
-  // own busy slot: it must not block, or be blocked by, container actions.
-  function startDaemon() {
-    if (daemonProc.running) return "busy"
-    actionError = ""
-    daemonBusy = true
-    daemonProc.command = [root.helperPath, "daemon-start"]
-    daemonProc.running = true
-    return "ok"
-  }
-
   function activateCursor() {
-    // With docker out of reach the list is empty and there is exactly one
-    // thing Enter can mean, so it works before the cursor is revealed.
-    if (daemonFixable) { startDaemon(); return }
     if (!cursorActive) { cursorActive = true; return }
     var row = rowAt(selectedIndex)
     if (!row) return
@@ -386,14 +372,6 @@ Panel {
       launchProc.running = true
       return "ok"
     }
-    if (item.id === "folder") {
-      if (launchProc.running) return "busy"
-      launchName = row.name
-      launchAction = "folder"
-      launchProc.command = [root.helperPath, "folder", String(item.arg)]
-      launchProc.running = true
-      return "ok"
-    }
     // pause / unpause / kill are ordinary lifecycle actions.
     return run(row.name, item.id)
   }
@@ -469,7 +447,7 @@ Panel {
   }
 
   IpcHandler {
-    target: "io.github.dicemans.docker-vms"
+    target: "shokupan.podman"
 
     function open(): void { root.open() }
     function close(): void { root.close() }
@@ -491,16 +469,12 @@ Panel {
       root.open()
       return root.askRemove(name)
     }
-
-    // Same gate as the panel's play button: polkit still asks, so this is
-    // safe to put on a key.
-    function startDocker(): string { return root.startDaemon() }
   }
 
   // ---------------------------------------------------------------- processes
   Process {
     id: listProc
-    command: [root.helperPath, "list", root.nameFilter]
+    command: [root.helperPath, "list"]
     stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.applyList(text) }
     // The helper prints a short code and nothing else when it fails, so this
     // stream both sets and clears the error without a second signal to race.
@@ -523,15 +497,6 @@ Panel {
     onExited: {
       root.launchName = ""
       root.launchAction = ""
-      root.refresh()
-    }
-  }
-
-  Process {
-    id: daemonProc
-    stderr: StdioCollector { waitForEnd: true; onStreamFinished: root.actionError = Model.clipDiag(text) }
-    onExited: {
-      root.daemonBusy = false
       root.refresh()
     }
   }
@@ -600,8 +565,8 @@ Panel {
     text: root.listError !== ""
       ? Model.GLYPH.alert
       : (root.countInBar && !vertical
-        ? root.runningCount + " " + Model.GLYPH.docker
-        : Model.GLYPH.docker)
+        ? root.runningCount + " " + Model.GLYPH.podman
+        : Model.GLYPH.podman)
     // Width follows the painted text. An icon slot is a canvas plus its
     // margins; keep those same margins around "N 🐳" instead of jumping to a
     // fixed double slot that leaves the count swimming in empty space.
@@ -610,7 +575,7 @@ Panel {
       : Style.bar.iconSlot
     active: root.runningCount > 0 || root.barUrgent
     // Green is "running and sound". The bar's urgent colour is reserved for
-    // an unreachable daemon or a container that needs attention.
+    // a failing podman or a container that needs attention.
     activeColor: root.barUrgent ? (root.bar ? root.bar.urgent : Color.urgent) : root.runningColor
     tooltipText: root.listError !== ""
       ? Model.errorText(root.listError)
@@ -884,7 +849,7 @@ Panel {
 
           Text {
             id: heroIcon
-            text: Model.GLYPH.docker
+            text: Model.GLYPH.podman
             color: root.bar.foreground
             font.family: root.bar.fontFamily
             font.pixelSize: Style.font.display
@@ -902,7 +867,7 @@ Panel {
             spacing: Style.space(2)
 
             Text {
-              text: "Docker"
+              text: "Podman"
               color: root.bar.foreground
               font.family: root.bar.fontFamily
               font.pixelSize: Style.font.title
@@ -978,7 +943,7 @@ Panel {
               visible: statsSwitch.containsMouse
               text: root.showStats
                 ? "CPU and memory on, sampled every " + root.statsIntervalSec + "s  ·  key: s"
-                : "Show CPU and memory. Costs a ~2s docker call each sample, on its own timer  ·  key: s"
+                : "Show CPU and memory. Costs a ~2s podman call each sample, on its own timer  ·  key: s"
               fontFamily: root.bar.fontFamily
             }
           }
@@ -993,67 +958,6 @@ Panel {
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.body
           elide: Text.ElideRight
-        }
-
-        // ---------- Docker out of reach: offer the fix, not just the diagnosis ----------
-        // The hero already says what is wrong; this is the way to change it
-        // without leaving the panel. Enter takes it too.
-        BorderSurface {
-          id: daemonStartButton
-          visible: root.daemonFixable
-          readonly property color tone: root.daemonBusy ? Util.alpha(root.bar.foreground, 0.38) : Color.accent
-
-          width: Math.min(parent.width, Style.space(220))
-          height: Style.space(38)
-          anchors.horizontalCenter: parent.horizontalCenter
-          radius: Style.cornerRadius
-          color: daemonStartMouse.containsMouse && !root.daemonBusy ? Util.alpha(Color.accent, 0.12) : "transparent"
-          borderSpec: Border.flat(daemonStartButton.tone, Style.normalBorderWidth)
-
-          Row {
-            anchors.centerIn: parent
-            spacing: Style.space(8)
-
-            Text {
-              text: Model.GLYPH.play
-              color: daemonStartButton.tone
-              font.family: root.bar.fontFamily
-              font.pixelSize: Style.font.heading
-              anchors.verticalCenter: parent.verticalCenter
-            }
-
-            Text {
-              text: root.daemonBusy
-                ? (root.accessDenied ? "Fixing access…" : "Starting Docker…")
-                : (root.accessDenied ? "Fix Docker access" : "Start Docker")
-              color: root.daemonBusy ? Qt.darker(root.bar.foreground, 1.4) : root.bar.foreground
-              font.family: root.bar.fontFamily
-              font.pixelSize: Style.font.body
-              anchors.verticalCenter: parent.verticalCenter
-            }
-          }
-
-          MouseArea {
-            id: daemonStartMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            enabled: !root.daemonBusy
-            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-            onClicked: root.startDaemon()
-          }
-
-          // The tooltip says exactly what the click will do with root: joining
-          // the docker group is a real security decision, and a button that
-          // does it silently would be hiding the one fact worth knowing.
-          PanelToolTip {
-            visible: daemonStartMouse.containsMouse
-            text: root.daemonBusy
-              ? "Waiting for the daemon to answer"
-              : (root.accessDenied
-                ? "Add your user to the docker group and open the socket for this session (asks for authorization)  ·  key: Enter"
-                : "Start the Docker daemon — and grant your user access if it lacks it (asks for authorization)  ·  key: Enter")
-            fontFamily: root.bar.fontFamily
-          }
         }
 
         // ---------- Container rows ----------

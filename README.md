@@ -16,6 +16,7 @@ Verified against **Omarchy 4.0.0.r1744** (quattro).
 | `plugins/shokupan-omenu` | Menu button wearing the power glyph instead of the Omarchy logo |
 | `plugins/shokupan-apexshot` | Screenshot button: left area, middle record, right full screen |
 | `plugins/shokupan-capture` | The same three clicks on the native `omarchy-capture-*` tools. Marked DORMANT — kept as the drop-in swap when the native flow matures |
+| `plugins/shokupan-podman` | Rootless Podman containers in the bar: start, stop, pause, remove, logs, shell, CPU/memory, and RDP for dockur VMs. Ported from Paolo Pellicori's MIT `io.github.dicemans.docker-vms`; tested by `test/podman-model-test.sh` |
 | `plugins/shokupan-dpms-guard` | Keeps the display off while locked, for monitors whose USB-C deep sleep hotplugs the connector and wakes the output |
 | `plugins/austinkarren.clock` | Clone of upstream's clock panel where day cells and the hero date open GNOME Calendar on the clicked day, and a second click closes it |
 | `plugins/austinkarren.notifications` | Clone of upstream's notification service that recovers an app's name and icon from the `desktop-entry` hint when the sender sent no `app_name` — the blank slot Ghostty and every sandboxed app land in |

@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.dicemans.docker-vms",
-  "name": "Docker VMs",
-  "version": "1.2.0",
-  "author": "Paolo Pellicori",
+  "id": "shokupan.podman",
+  "name": "Podman",
+  "version": "1.0.0",
+  "author": "shokupan, from Paolo Pellicori's docker-vms",
   "license": "MIT",
-  "description": "Start, restart, stop, pause and remove Docker containers from the bar, read their logs, open a shell, and open a desktop session on Windows VMs. When docker itself is out of reach — daemon down, or no access to the socket — one button fixes it behind a single polkit authorization.",
+  "description": "Start, restart, stop, pause and remove rootless Podman containers from the bar, read their logs, open a shell, and open a desktop session on dockur Windows VMs. Ported from io.github.dicemans.docker-vms.",
   "kinds": [
     "bar-widget"
   ],
@@ -13,7 +13,7 @@
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "Docker VMs",
+    "displayName": "Podman",
     "description": "Container control with logs, shell and an opt-in performance monitor, plus an RDP session and web viewer for dockur Windows/macOS VMs.",
     "category": "System",
     "allowMultiple": false,
@@ -48,7 +48,7 @@
         "max": 600,
         "step": 5,
         "defaultValue": 60,
-        "description": "How long docker may spend on a clean shutdown before it kills the container. Docker's own default without this is 10 seconds, which is a power cut for a virtual machine."
+        "description": "How long podman may spend on a clean shutdown before it kills the container. Podman's own default without this is 10 seconds, which is a power cut for a virtual machine."
       },
       {
         "key": "rdpTimeoutSec",
@@ -65,7 +65,7 @@
         "type": "boolean",
         "label": "Show CPU and memory",
         "defaultValue": false,
-        "description": "Adds a performance line to every running container. Off by default: the docker call behind it waits about two seconds each time, against roughly sixty milliseconds for the whole listing. It runs on its own slower timer so the list stays responsive."
+        "description": "Adds a performance line to every running container. Off by default: the podman call behind it waits about two seconds each time, against roughly sixty milliseconds for the whole listing. It runs on its own slower timer so the list stays responsive."
       },
       {
         "key": "statsIntervalSec",
@@ -102,7 +102,7 @@
         "type": "string",
         "label": "Running colour",
         "defaultValue": "",
-        "description": "Hex colour for the bar glyph and count while containers are running and healthy. Leave empty to use the active theme's green from colors.toml. The bar's urgent colour still takes over when docker is unreachable or a container needs attention."
+        "description": "Hex colour for the bar glyph and count while containers are running and healthy. Leave empty to use the active theme's green from colors.toml. The bar's urgent colour still takes over when podman is unreachable or a container needs attention."
       }
     ]
   }
