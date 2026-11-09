@@ -562,17 +562,21 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.listError !== ""
-      ? Model.GLYPH.alert
-      : (root.countInBar && !vertical
-        ? root.runningCount + " " + Model.GLYPH.podman
-        : Model.GLYPH.podman)
-    // Width follows the painted text. An icon slot is a canvas plus its
-    // margins; keep those same margins around "N 🐳" instead of jumping to a
-    // fixed double slot that leaves the count swimming in empty space.
-    slotSize: root.countInBar && !vertical && root.listError === ""
-      ? Math.max(Style.bar.iconSlot, Math.ceil(glyphPaintedWidth) + (Style.bar.iconSlot - Style.bar.iconCanvas))
+    // SHOKUPAN: the count goes in labelText, not in `text`. OpticalGlyph
+    // fits its whole string into one icon's painted size, so "5 󰡨" drew the
+    // glyph at roughly half the size of its neighbours.
+    text: root.listError !== "" ? Model.GLYPH.alert : Model.GLYPH.podman
+    labelText: root.countInBar && !vertical && root.listError === "" ? String(root.runningCount) : ""
+    slotSize: labelText !== ""
+      ? Style.bar.iconSlot + Math.ceil(countMetrics.advanceWidth) + Style.space(4)
       : Style.bar.iconSlot
+
+    TextMetrics {
+      id: countMetrics
+      font.family: button.fontFamily
+      font.pixelSize: button.fontSize
+      text: button.labelText
+    }
     active: root.runningCount > 0 || root.barUrgent
     // Green is "running and sound". The bar's urgent colour is reserved for
     // a failing podman or a container that needs attention.

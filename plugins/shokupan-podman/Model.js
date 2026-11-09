@@ -51,7 +51,7 @@ function stateRules(state) {
 }
 
 var GLYPH = {
-  podman: "󰡨",
+  podman: "\ue866",
   windows: "󰍲",
   macos: "󰀵",
   connect: "󰢹",
@@ -387,7 +387,12 @@ function errorText(code) {
   switch (String(code || "").trim()) {
     case "": return ""
     case "podman-missing": return "Podman is not installed"
-    case "podman-failed": return "podman ps failed"
+    case "podman-failed": return "podman did not answer"
+    case "bad-port": return "Not a valid port"
+    case "no-terminal-launcher": return "omarchy-launch-terminal is not available"
+    case "pause-failed": return "Could not pause the container"
+    case "unpause-failed": return "Could not resume the container"
+    case "kill-failed": return "Could not kill the container"
     case "list-unreadable": return "Could not read podman's container list"
     case "no-container": return "No container given"
     case "no-such-container": return "Container no longer exists"

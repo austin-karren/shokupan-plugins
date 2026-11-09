@@ -51,16 +51,17 @@ require_podman() {
 # Run a JSON producer under a byte budget. One byte over the cap is read so
 # "exactly at the cap" and "over it" are distinguishable.
 bounded_json() {
-  local out rc
-  out=$("$@" 2>/dev/null | head -c $((MAX_BYTES + 1)); exit "${PIPESTATUS[0]}")
+  local out rc errfile
+  errfile=$(mktemp) || die "podman-failed"
+  out=$("$@" 2>"$errfile" | head -c $((MAX_BYTES + 1)); exit "${PIPESTATUS[0]}")
   rc=$?
-  # Checked before the exit status: an over-cap producer dies of SIGPIPE.
-  ((${#out} > MAX_BYTES)) && die "list-too-large"
-  if ((rc != 0)); then
-    local err
-    err=$("$@" 2>&1 >/dev/null | head -1)
-    die "${err:-podman-failed}"
-  fi
+  local err
+  err=$(head -1 "$errfile")
+  rm -f "$errfile"
+  # Bytes, not characters: head -c counts bytes. Checked before the exit
+  # status, because an over-cap producer dies of SIGPIPE.
+  (($(printf '%s' "$out" | wc -c) > MAX_BYTES)) && die "list-too-large"
+  ((rc == 0)) || die "${err:-podman-failed}"
   printf '%s\n' "$out"
 }
 
@@ -216,7 +217,8 @@ cmd_viewer() {
 
 cmd_open() {
   local name="$1" port="$2"
-  [[ $port =~ ^[0-9]{1,5}$ ]] && ((port > 0 && port < 65536)) || die "bad-port"
+  # [1-9] first: a leading zero would be read as octal by (( )).
+  [[ $port =~ ^[1-9][0-9]{0,4}$ ]] && ((port < 65536)) || die "bad-port"
   need_container "$name"
   [[ $(container_state "$name") == "running" ]] || die "container-not-running"
   open_url "http://127.0.0.1:$port"
