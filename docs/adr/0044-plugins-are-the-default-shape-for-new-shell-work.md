@@ -136,3 +136,11 @@ absent from `packages/plugins`: that index records what this repo publishes, and
 adding someone else's plugin to it would both misstate authorship and make
 `loaf plugins` try to manage a directory it does not own.*
 
+
+*Addendum 2026-11-11: ApexShot is retired for good. The native flow improved
+— `omarchy-capture-screenshot` now runs omasnap — and the user judged it
+"good enough". `shokupan.capture` takes the bar slot, the plugin and
+`40-theme-apexshot` are deleted, and the `bindings.lua` chords in `shokupan`
+now call the `omarchy-capture-*` tools (crosshair and last-preview, which have
+no omasnap equivalent, are dropped). `docs/upstream/apexshot-theme-support.md`
+is moot and stays only as history.*

@@ -14,8 +14,7 @@ Verified against **Omarchy 4.0.0.r1744** (quattro).
 | Path | What it is |
 |---|---|
 | `plugins/shokupan-omenu` | Menu button wearing the power glyph instead of the Omarchy logo |
-| `plugins/shokupan-apexshot` | Screenshot button: left area, middle record, right full screen |
-| `plugins/shokupan-capture` | The same three clicks on the native `omarchy-capture-*` tools. Marked DORMANT — kept as the drop-in swap when the native flow matures |
+| `plugins/shokupan-capture` | Screenshot button on Omarchy's native capture tools (omasnap): left area, middle record, right full screen |
 | `plugins/shokupan-podman` | Rootless Podman containers in the bar: start, stop, pause, remove, logs, shell, CPU/memory, and RDP for dockur VMs. Ported from Paolo Pellicori's MIT `io.github.dicemans.docker-vms`; tested by `test/podman-model-test.sh` |
 | `plugins/shokupan-dpms-guard` | Keeps the display off while locked, for monitors whose USB-C deep sleep hotplugs the connector and wakes the output |
 | `plugins/austinkarren.clock` | Clone of upstream's clock panel where day cells and the hero date open GNOME Calendar on the clicked day, and a second click closes it |
@@ -71,7 +70,7 @@ edits are small and marked in-file:
 
 **Original here**, written against Omarchy's documented plugin, widget and
 indicator APIs rather than copied from its implementations:
-`plugins/shokupan-apexshot`, `plugins/shokupan-capture`,
+`plugins/shokupan-capture`,
 `plugins/shokupan-dpms-guard`, `bar/indicators/Ratio.qml`, `bin/`, `hooks/`,
 `docs/`, `packages/plugins` and every `manifest.json`.
 

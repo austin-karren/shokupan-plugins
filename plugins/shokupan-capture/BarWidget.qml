@@ -1,4 +1,4 @@
-// The capture button on the bar — muscle-memory clone of the deprecated
+// The capture button on the bar — muscle-memory clone of the retired
 // shokupan.apexshot button (same glyph, same slot, same three clicks) on
 // omarchy's native capture tools. `omarchy-capture-screenshot` is the
 // user-facing entry; a bare `omarchy-capture-screenrecording` toggles.
