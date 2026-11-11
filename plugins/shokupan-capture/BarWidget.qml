@@ -1,7 +1,8 @@
 // The capture button on the bar — muscle-memory clone of the retired
 // shokupan.apexshot button (same glyph, same slot, same three clicks) on
-// omarchy's native capture tools. `omarchy-capture-screenshot` is the
-// user-facing entry; a bare `omarchy-capture-screenrecording` toggles.
+// omarchy's native capture tools. Screenshots run omasnap bare -- the same
+// launch as the app menu (preview, pin, Edit) -- and a bare
+// `omarchy-capture-screenrecording` toggles recording.
 //
 // Root is a plain Item with DECLARED bar/moduleName/settings, the shape the
 // plugin loader injects into (same as the old apexshot widget). It cannot be
@@ -41,9 +42,9 @@ Item {
     tooltipText: "Capture\n\nLeft: capture area\nMiddle: record screen\nRight: capture full screen"
     onPressed: function(b) {
       if (!root.bar) return
-      if (b === Qt.RightButton) root.bar.run("omarchy-capture-screenshot fullscreen")
+      if (b === Qt.RightButton) root.bar.run("omasnap --capture-fullscreen")
       else if (b === Qt.MiddleButton) root.bar.run("omarchy-capture-screenrecording")
-      else root.bar.run("omarchy-capture-screenshot region")
+      else root.bar.run("omasnap")
     }
   }
 }
